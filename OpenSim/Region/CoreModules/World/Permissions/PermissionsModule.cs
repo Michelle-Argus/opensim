@@ -33,6 +33,7 @@ using Nini.Config;
 using OpenMetaverse;
 using OpenSim.Framework;
 
+using OpenSim.Framework.Console;
 using OpenSim.Region.Framework.Interfaces;
 using OpenSim.Region.Framework.Scenes;
 using OpenSim.Services.Interfaces;
@@ -94,6 +95,7 @@ namespace OpenSim.Region.CoreModules.World.Permissions
         private bool m_RegionOwnerIsGod = false;
         private bool m_RegionManagerIsGod = false;
         private bool m_ParcelOwnerIsGod = false;
+        private List<string> AgentListIsGod = new List<string>();
 
         private bool m_SimpleBuildPermissions = false;
 
@@ -225,6 +227,20 @@ namespace OpenSim.Region.CoreModules.World.Permissions
                     "debug permissions <true / false>",
                     "Turn on permissions debugging",
                     HandleDebugPermissions);                    
+
+			MainConsole.Instance.Commands.AddCommand("permissions", true,
+				"add god",
+						"add god <uuid>",
+						"add agent to god permissions",
+						String.Empty,
+						AddAgentGodPermissions);
+
+			MainConsole.Instance.Commands.AddCommand("permissions", true,
+				"remove god",
+						"remove god <uuid>",
+						"remove agent from god permissions",
+						String.Empty,
+						RemoveAgentGodPermissions);
                     
             string grant = myConfig.GetString("GrantLSL","");
             if (grant.Length > 0) {
@@ -267,6 +283,16 @@ namespace OpenSim.Region.CoreModules.World.Permissions
                 {
                     string uuid = uuidl.Trim(" \t".ToCharArray());
                     GrantYP.Add(uuid, true);
+                }
+            }
+
+            grant = myConfig.GetString("agent_list_is_god", String.Empty);
+            if (grant.Length > 0)
+            {
+                foreach (string uuidl in grant.Split(','))
+                {
+                    string uuid = uuidl.Trim();
+                    AgentListIsGod.Add(uuid);
                 }
             }
 
@@ -343,6 +369,52 @@ namespace OpenSim.Region.CoreModules.World.Permissions
             }
         }
 
+        public void AddAgentGodPermissions(string module, string[] args)
+        {
+			if (args.Length != 3)
+            {
+				MainConsole.Instance.Output("Syntax: add god <uuid>");
+				return;
+            }
+            else
+            {
+				string val = args[2];
+				
+				if(AgentListIsGod.Contains(val))
+				{
+					MainConsole.Instance.Output("[PERMISSIONS] agent already listed");
+					return;
+				}
+				
+				AgentListIsGod.Add(val);
+				
+				m_log.InfoFormat("[PERMISSIONS] Added user {0} to god permissions", val);
+            }
+        }
+        
+        public void RemoveAgentGodPermissions(string module, string[] args)
+        {
+			if (args.Length != 3)
+            {
+				MainConsole.Instance.Output("Syntax: remove god <uuid>");
+				return;
+            }
+            else
+            {
+				string val = args[2];
+				
+				if(!AgentListIsGod.Contains(val))
+				{
+					MainConsole.Instance.Output("[PERMISSIONS] could not remove agent, agent not listed");
+					return;
+				}
+				
+				AgentListIsGod.Remove(val);
+				
+				m_log.InfoFormat("[PERMISSIONS] Removed user {0} from god permissions", val);
+            }
+        }
+        
         public void PostInitialise()
         {
             m_friendsModule = m_scene.RequestModuleInterface<IFriendsModule>();
@@ -463,6 +535,9 @@ namespace OpenSim.Region.CoreModules.World.Permissions
                 return true;
             
             if (IsEstateManager(user) && m_RegionManagerIsGod)
+                return true;
+            
+            if ( AgentListIsGod.Contains(user.ToString()))
                 return true;
 
             if (IsGridGod(user, null))
