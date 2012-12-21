@@ -29,6 +29,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using log4net;
+using Mono.Addins;
 using Nini.Config;
 using OpenMetaverse;
 using OpenSim.Framework;
@@ -38,6 +39,7 @@ using OpenSim.Services.Interfaces;
 
 namespace OpenSim.Region.CoreModules.Avatar.Inventory.Transfer
 {
+    [Extension(Path = "/OpenSim/RegionModules", NodeName = "RegionModule", Id = "InventoryTransferModule")]
     public class InventoryTransferModule : ISharedRegionModule
     {
         private static readonly ILog m_log
@@ -51,7 +53,7 @@ namespace OpenSim.Region.CoreModules.Avatar.Inventory.Transfer
         private IMessageTransferModule m_TransferModule = null;
         private bool m_Enabled = true;
 
-        #region IRegionModule Members
+        #region Region Module interface
 
         public void Initialise(IConfigSource config)
         {
@@ -298,10 +300,11 @@ namespace OpenSim.Region.CoreModules.Avatar.Inventory.Transfer
                 }
             }
 
-            // XXX: This code was placed here to try and accomdate RLV which moves given folders named #RLV/~<name>
-            // to a folder called name in #RLV.  However, this approach may not be ultimately correct - from analysis
-            // of Firestorm 4.2.2 on sending an InventoryOffered instead of TaskInventoryOffered (as was previously
-            // done), the viewer itself would appear to move and rename the folder, rather than the simulator doing it here.
+            // XXX: This code was placed here to try and accomodate RLV which moves given folders named #RLV/~<name>
+            // to the requested folder, which in this case is #RLV.  However, it is the viewer that appears to be 
+            // response from renaming the #RLV/~example folder to ~example.  For some reason this is not yet 
+            // happening, possibly because we are not sending the correct inventory update messages with the correct
+            // transaction IDs
             else if (im.dialog == (byte) InstantMessageDialog.TaskInventoryAccepted)
             {
                 UUID destinationFolderID = UUID.Zero;
@@ -434,16 +437,19 @@ namespace OpenSim.Region.CoreModules.Avatar.Inventory.Transfer
                     scene.SendInventoryUpdate(client, trashFolder, true, true);
                 }
 
-                ScenePresence user = scene.GetScenePresence(new UUID(im.toAgentID));
+                if (im.dialog == (byte)InstantMessageDialog.InventoryDeclined)
+                {
+                    ScenePresence user = scene.GetScenePresence(new UUID(im.toAgentID));
 
-                if (user != null) // Local
-                {
-                    user.ControllingClient.SendInstantMessage(im);
-                }
-                else
-                {
-                    if (m_TransferModule != null)
-                        m_TransferModule.SendInstantMessage(im, delegate(bool success) {});
+                    if (user != null) // Local
+                    {
+                        user.ControllingClient.SendInstantMessage(im);
+                    }
+                    else
+                    {
+                        if (m_TransferModule != null)
+                            m_TransferModule.SendInstantMessage(im, delegate(bool success) { });
+                    }
                 }
             }
         }

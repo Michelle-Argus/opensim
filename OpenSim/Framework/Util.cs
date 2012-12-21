@@ -1741,12 +1741,16 @@ namespace OpenSim.Framework
             StringBuilder sb = new StringBuilder();
             if (FireAndForgetMethod == FireAndForgetMethod.SmartThreadPool)
             {
-                threadPoolUsed = "SmartThreadPool";
-                maxThreads = m_ThreadPool.MaxThreads;
-                minThreads = m_ThreadPool.MinThreads;
-                inUseThreads = m_ThreadPool.InUseThreads;
-                allocatedThreads = m_ThreadPool.ActiveThreads;
-                waitingCallbacks = m_ThreadPool.WaitingCallbacks;
+                // ROBUST currently leaves this the FireAndForgetMethod but never actually initializes the threadpool.
+                if (m_ThreadPool != null)
+                {
+                    threadPoolUsed = "SmartThreadPool";
+                    maxThreads = m_ThreadPool.MaxThreads;
+                    minThreads = m_ThreadPool.MinThreads;
+                    inUseThreads = m_ThreadPool.InUseThreads;
+                    allocatedThreads = m_ThreadPool.ActiveThreads;
+                    waitingCallbacks = m_ThreadPool.WaitingCallbacks;
+                }
             }
             else if (
                 FireAndForgetMethod == FireAndForgetMethod.UnsafeQueueUserWorkItem
@@ -1851,6 +1855,12 @@ namespace OpenSim.Framework
         /// </summary>
         public static void PrintCallStack()
         {
+            PrintCallStack(m_log.DebugFormat);
+        }
+
+        public delegate void DebugPrinter(string msg, params Object[] parm);
+        public static void PrintCallStack(DebugPrinter printer)
+        {
             StackTrace stackTrace = new StackTrace(true);           // get call stack
             StackFrame[] stackFrames = stackTrace.GetFrames();  // get method calls (frames)
 
@@ -1858,7 +1868,7 @@ namespace OpenSim.Framework
             foreach (StackFrame stackFrame in stackFrames)
             {
                 MethodBase mb = stackFrame.GetMethod();
-                m_log.DebugFormat("{0}.{1}:{2}", mb.DeclaringType, mb.Name, stackFrame.GetFileLineNumber()); // write method name
+                printer("{0}.{1}:{2}", mb.DeclaringType, mb.Name, stackFrame.GetFileLineNumber()); // write method name
             }
         }
 

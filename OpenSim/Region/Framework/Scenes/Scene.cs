@@ -176,7 +176,6 @@ namespace OpenSim.Region.Framework.Scenes
         protected List<RegionInfo> m_regionRestartNotifyList = new List<RegionInfo>();
         protected List<RegionInfo> m_neighbours = new List<RegionInfo>();
         protected string m_simulatorVersion = "OpenSimulator Server";
-        protected ModuleLoader m_moduleLoader;
         protected AgentCircuitManager m_authenticateHandler;
         protected SceneCommunicationService m_sceneGridService;
 
@@ -659,7 +658,7 @@ namespace OpenSim.Region.Framework.Scenes
         public Scene(RegionInfo regInfo, AgentCircuitManager authen,
                      SceneCommunicationService sceneGridService,
                      ISimulationDataService simDataService, IEstateDataService estateDataService,
-                     ModuleLoader moduleLoader, bool dumpAssetsToFile,
+                     bool dumpAssetsToFile,
                      IConfigSource config, string simulatorVersion)
             : this(regInfo)
         {
@@ -670,7 +669,6 @@ namespace OpenSim.Region.Framework.Scenes
             Random random = new Random();
 
             m_lastAllocatedLocalId = (uint)(random.NextDouble() * (double)(uint.MaxValue / 2)) + (uint)(uint.MaxValue / 4);
-            m_moduleLoader = moduleLoader;
             m_authenticateHandler = authen;
             m_sceneGridService = sceneGridService;
             m_SimulationDataService = simDataService;
@@ -742,7 +740,12 @@ namespace OpenSim.Region.Framework.Scenes
             //
             // Out of memory
             // Operating system has killed the plugin
-            m_sceneGraph.UnRecoverableError += RestartNow;
+            m_sceneGraph.UnRecoverableError 
+                += () => 
+                    { 
+                        m_log.ErrorFormat("[SCENE]: Restarting region {0} due to unrecoverable physics crash", Name); 
+                        RestartNow(); 
+                    };
 
             RegisterDefaultSceneEvents();
 
@@ -1136,15 +1139,9 @@ namespace OpenSim.Region.Framework.Scenes
                 }
             }
 
-            m_log.Error("[REGION]: Closing");
+            m_log.InfoFormat("[REGION]: Restarting region {0}", Name);
+
             Close();
-
-            if (PhysicsScene != null)
-            {
-                PhysicsScene.Dispose();
-            }            
-
-            m_log.Error("[REGION]: Firing Region Restart Message");
 
             base.Restart();
         }
@@ -5641,10 +5638,17 @@ namespace OpenSim.Region.Framework.Scenes
             return m_SpawnPoint - 1;
         }
 
-        // Wrappers to get physics modules retrieve assets. Has to be done this way
-        // because we can't assign the asset service to physics directly - at the
-        // time physics are instantiated it's not registered but it will be by
-        // the time the first prim exists.
+        /// <summary>
+        /// Wrappers to get physics modules retrieve assets. 
+        /// </summary>
+        /// <remarks>
+        /// Has to be done this way
+        /// because we can't assign the asset service to physics directly - at the
+        /// time physics are instantiated it's not registered but it will be by
+        /// the time the first prim exists.
+        /// </remarks>
+        /// <param name="assetID"></param>
+        /// <param name="callback"></param>
         public void PhysicsRequestAsset(UUID assetID, AssetReceivedDelegate callback)
         {
             AssetService.Get(assetID.ToString(), callback, PhysicsAssetReceived);

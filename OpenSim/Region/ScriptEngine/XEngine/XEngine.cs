@@ -30,6 +30,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Security;
 using System.Security.Policy;
@@ -106,6 +107,24 @@ namespace OpenSim.Region.ScriptEngine.XEngine
         private IXmlRpcRouter m_XmlRpcRouter;
         private int m_EventLimit;
         private bool m_KillTimedOutScripts;
+
+        /// <summary>
+        /// Number of milliseconds we will wait for a script event to complete on script stop before we forcibly abort
+        /// its thread.
+        /// </summary>
+        /// <remarks>
+        /// It appears that if a script thread is aborted whilst it is holding ReaderWriterLockSlim (possibly the write
+        /// lock) then the lock is not properly released.  This causes mono 2.6, 2.10 and possibly
+        /// later to crash, sometimes with symptoms such as a leap to 100% script usage and a vm thead dump showing
+        /// all threads waiting on release of ReaderWriterLockSlim write thread which none of the threads listed 
+        /// actually hold.
+        /// 
+        /// Pausing for event completion reduces the risk of this happening.  However, it may be that aborting threads
+        /// is not a mono issue per se but rather a risky activity in itself in an AppDomain that is not immediately
+        /// shutting down.
+        /// </remarks>
+        private int m_WaitForEventCompletionOnScriptStop = 1000;
+
         private string m_ScriptEnginesPath = null;
 
         private ExpiringCache<UUID, bool> m_runFlags = new ExpiringCache<UUID, bool>();
@@ -248,6 +267,9 @@ namespace OpenSim.Region.ScriptEngine.XEngine
             m_EventLimit = m_ScriptConfig.GetInt("EventLimit", 30);
             m_KillTimedOutScripts = m_ScriptConfig.GetBoolean("KillTimedOutScripts", false);
             m_SaveTime = m_ScriptConfig.GetInt("SaveInterval", 120) * 1000;
+            m_WaitForEventCompletionOnScriptStop 
+                = m_ScriptConfig.GetInt("WaitForEventCompletionOnScriptStop", m_WaitForEventCompletionOnScriptStop);
+
             m_ScriptEnginesPath = m_ScriptConfig.GetString("ScriptEnginesPath", "ScriptEngines");
 
             m_Prio = ThreadPriority.BelowNormal;
@@ -303,7 +325,7 @@ namespace OpenSim.Region.ScriptEngine.XEngine
 
             MainConsole.Instance.Commands.AddCommand(
                 "Scripts", false, "scripts show", "scripts show [<script-item-uuid>]", "Show script information",
-                "Show information on all scripts known to the script engine."
+                "Show information on all scripts known to the script engine.\n"
                     + "If a <script-item-uuid> is given then only information on that script will be shown.",
                 HandleShowScripts);
 
@@ -322,21 +344,29 @@ namespace OpenSim.Region.ScriptEngine.XEngine
             MainConsole.Instance.Commands.AddCommand(
                 "Scripts", false, "scripts resume", "scripts resume [<script-item-uuid>]", "Resumes all suspended scripts",
                 "Resumes all currently suspended scripts.\n"
-                    + "Resumed scripts will process all events accumulated whilst suspended."
+                    + "Resumed scripts will process all events accumulated whilst suspended.\n"
                     + "If a <script-item-uuid> is given then only that script will be resumed.  Otherwise, all suitable scripts are resumed.",
                 (module, cmdparams) => HandleScriptsAction(cmdparams, HandleResumeScript));
 
             MainConsole.Instance.Commands.AddCommand(
                 "Scripts", false, "scripts stop", "scripts stop [<script-item-uuid>]", "Stops all running scripts",
-                "Stops all running scripts."
+                "Stops all running scripts.\n"
                     + "If a <script-item-uuid> is given then only that script will be stopped.  Otherwise, all suitable scripts are stopped.",
                 (module, cmdparams) => HandleScriptsAction(cmdparams, HandleStopScript));
 
             MainConsole.Instance.Commands.AddCommand(
                 "Scripts", false, "scripts start", "scripts start [<script-item-uuid>]", "Starts all stopped scripts",
-                "Starts all stopped scripts."
+                "Starts all stopped scripts.\n"
                     + "If a <script-item-uuid> is given then only that script will be started.  Otherwise, all suitable scripts are started.",
                 (module, cmdparams) => HandleScriptsAction(cmdparams, HandleStartScript));
+
+            MainConsole.Instance.Commands.AddCommand(
+                "Scripts", false, "debug script log", "debug scripts log <item-id> <log-level>", "Extra debug logging for a script",
+                "Activates or deactivates extra debug logging for the given script.\n"
+                    + "Level == 0, deactivate extra debug logging.\n"
+                    + "Level >= 1, log state changes.\n"
+                    + "Level >= 2, log event invocations.\n",
+                HandleDebugScriptLogCommand);
 
 //            MainConsole.Instance.Commands.AddCommand(
 //                "Debug", false, "debug xengine", "debug xengine [<level>]",
@@ -344,6 +374,41 @@ namespace OpenSim.Region.ScriptEngine.XEngine
 //                  "If level <= 0, then no extra logging is done.\n"
 //                + "If level >= 1, then we log every time that a script is started.",
 //                HandleDebugLevelCommand);
+        }
+
+        private void HandleDebugScriptLogCommand(string module, string[] args)
+        {
+            if (!(MainConsole.Instance.ConsoleScene == null || MainConsole.Instance.ConsoleScene == m_Scene))
+                return;
+
+            if (args.Length != 5)
+            {
+                MainConsole.Instance.Output("Usage: debug script log <item-id> <log-level>");
+                return;
+            }
+
+            UUID itemId;
+
+            if (!ConsoleUtil.TryParseConsoleUuid(MainConsole.Instance, args[3], out itemId))
+                return;
+
+            int newLevel;
+
+            if (!ConsoleUtil.TryParseConsoleInt(MainConsole.Instance, args[4], out newLevel))
+                return;
+
+            IScriptInstance si;
+
+            lock (m_Scripts)
+            {
+                // XXX: We can't give the user feedback on a bad item id because this may apply to a different script
+                // engine
+                if (!m_Scripts.TryGetValue(itemId, out si))
+                    return;
+            }
+
+            si.DebugLevel = newLevel;
+            MainConsole.Instance.OutputFormat("Set debug level of {0} {1} to {2}", si.ScriptName, si.ItemID, newLevel);
         }
 
         /// <summary>
@@ -377,8 +442,20 @@ namespace OpenSim.Region.ScriptEngine.XEngine
         /// </summary>
         /// <param name="cmdparams"></param>
         /// <param name="instance"></param>
-        /// <returns>true if we're okay to proceed, false if not.</returns>
+        /// <param name="comparer">Basis on which to sort output.  Can be null if no sort needs to take place</param>
         private void HandleScriptsAction(string[] cmdparams, Action<IScriptInstance> action)
+        {
+            HandleScriptsAction<object>(cmdparams, action, null);
+        }
+
+        /// <summary>
+        /// Parse the raw item id into a script instance from the command params if it's present.
+        /// </summary>
+        /// <param name="cmdparams"></param>
+        /// <param name="instance"></param>
+        /// <param name="keySelector">Basis on which to sort output.  Can be null if no sort needs to take place</param>
+        private void HandleScriptsAction<TKey>(
+            string[] cmdparams, Action<IScriptInstance> action, Func<IScriptInstance, TKey> keySelector)
         {
             if (!(MainConsole.Instance.ConsoleScene == null || MainConsole.Instance.ConsoleScene == m_Scene))
                 return;
@@ -390,7 +467,12 @@ namespace OpenSim.Region.ScriptEngine.XEngine
     
                 if (cmdparams.Length == 2)
                 {
-                    foreach (IScriptInstance instance in m_Scripts.Values)
+                    IEnumerable<IScriptInstance> scripts = m_Scripts.Values;
+
+                    if (keySelector != null)
+                        scripts = scripts.OrderBy<IScriptInstance, TKey>(keySelector);
+
+                    foreach (IScriptInstance instance in scripts)
                         action(instance);
 
                     return;
@@ -400,7 +482,7 @@ namespace OpenSim.Region.ScriptEngine.XEngine
     
                 if (!UUID.TryParse(rawItemId, out itemId))
                 {
-                    MainConsole.Instance.OutputFormat("Error - {0} is not a valid UUID", rawItemId);
+                    MainConsole.Instance.OutputFormat("ERROR: {0} is not a valid UUID", rawItemId);
                     return;
                 }
     
@@ -437,9 +519,20 @@ namespace OpenSim.Region.ScriptEngine.XEngine
             StringBuilder sb = new StringBuilder();
             sb.AppendFormat("Status of XEngine instance for {0}\n", m_Scene.RegionInfo.RegionName);
 
-            lock (m_Scripts)
-                sb.AppendFormat("Scripts loaded             : {0}\n", m_Scripts.Count);
+            long scriptsLoaded, eventsQueued = 0, eventsProcessed = 0;
 
+            lock (m_Scripts)
+            {
+                scriptsLoaded = m_Scripts.Count;
+
+                foreach (IScriptInstance si in m_Scripts.Values)
+                {
+                    eventsQueued += si.EventsQueued;
+                    eventsProcessed += si.EventsProcessed;
+                }
+            }
+
+            sb.AppendFormat("Scripts loaded             : {0}\n", scriptsLoaded);
             sb.AppendFormat("Unique scripts             : {0}\n", m_uniqueScripts.Count);
             sb.AppendFormat("Scripts waiting for load   : {0}\n", m_CompileQueue.Count);
             sb.AppendFormat("Max threads                : {0}\n", m_ThreadPool.MaxThreads);
@@ -448,6 +541,8 @@ namespace OpenSim.Region.ScriptEngine.XEngine
             sb.AppendFormat("In use threads             : {0}\n", m_ThreadPool.InUseThreads);
             sb.AppendFormat("Work items waiting         : {0}\n", m_ThreadPool.WaitingCallbacks);
 //            sb.AppendFormat("Assemblies loaded          : {0}\n", m_Assemblies.Count);
+            sb.AppendFormat("Events queued              : {0}\n", eventsQueued);
+            sb.AppendFormat("Events processed           : {0}\n", eventsProcessed);
 
             SensorRepeat sr = AsyncCommandManager.GetSensorRepeatPlugin(this);
             sb.AppendFormat("Sensors                    : {0}\n", sr != null ? sr.SensorsCount : 0);
@@ -478,7 +573,7 @@ namespace OpenSim.Region.ScriptEngine.XEngine
                 }
             }
 
-            HandleScriptsAction(cmdparams, HandleShowScript);
+            HandleScriptsAction<long>(cmdparams, HandleShowScript, si => si.EventsProcessed);
         }
 
         private void HandleShowScript(IScriptInstance instance)
@@ -508,11 +603,10 @@ namespace OpenSim.Region.ScriptEngine.XEngine
 
             sb.AppendFormat("Script name         : {0}\n", instance.ScriptName);
             sb.AppendFormat("Status              : {0}\n", status);
-
-            lock (eq)
-                sb.AppendFormat("Queued events       : {0}\n", eq.Count);
-
+            sb.AppendFormat("Queued events       : {0}\n", instance.EventsQueued);
+            sb.AppendFormat("Processed events    : {0}\n", instance.EventsProcessed);
             sb.AppendFormat("Item UUID           : {0}\n", instance.ItemID);
+            sb.AppendFormat("Asset UUID          : {0}\n", instance.AssetID);
             sb.AppendFormat("Containing part name: {0}\n", instance.PrimName);
             sb.AppendFormat("Containing part UUID: {0}\n", instance.ObjectID);
             sb.AppendFormat("Position            : {0}\n", sop.AbsolutePosition);
@@ -1018,8 +1112,7 @@ namespace OpenSim.Region.ScriptEngine.XEngine
 
             string assembly = "";
 
-            CultureInfo USCulture = new CultureInfo("en-US");
-            Thread.CurrentThread.CurrentCulture = USCulture;
+            Culture.SetCurrentCulture();
 
             Dictionary<KeyValuePair<int, int>, KeyValuePair<int, int>> linemap;
 
@@ -1263,9 +1356,7 @@ namespace OpenSim.Region.ScriptEngine.XEngine
 
             instance.ClearQueue();
 
-            // Give the script some time to finish processing its last event.  Simply aborting the script thread can
-            // cause issues on mono 2.6, 2.10 and possibly later where locks are not released properly on abort.
-            instance.Stop(1000);
+            instance.Stop(m_WaitForEventCompletionOnScriptStop);
 
 //                bool objectRemoved = false;
 
@@ -1415,8 +1506,7 @@ namespace OpenSim.Region.ScriptEngine.XEngine
         /// <returns></returns>
         private object ProcessEventHandler(object parms)
         {
-            CultureInfo USCulture = new CultureInfo("en-US");
-            Thread.CurrentThread.CurrentCulture = USCulture;
+            Culture.SetCurrentCulture();
 
             IScriptInstance instance = (ScriptInstance) parms;
             
@@ -1601,7 +1691,7 @@ namespace OpenSim.Region.ScriptEngine.XEngine
         {
             IScriptInstance instance = GetInstance(itemID);
             if (instance != null)
-                instance.ResetScript();
+                instance.ResetScript(m_WaitForEventCompletionOnScriptStop);
         }
 
         public void StartScript(UUID itemID)
@@ -1616,16 +1706,11 @@ namespace OpenSim.Region.ScriptEngine.XEngine
         public void StopScript(UUID itemID)
         {
             IScriptInstance instance = GetInstance(itemID);
+
             if (instance != null)
-            {
-                // Give the script some time to finish processing its last event.  Simply aborting the script thread can
-                // cause issues on mono 2.6, 2.10 and possibly later where locks are not released properly on abort.
-                instance.Stop(1000);
-            }
+                instance.Stop(m_WaitForEventCompletionOnScriptStop);
             else
-            {
                 m_runFlags.AddOrUpdate(itemID, false, 240);
-            }
         }
 
         public DetectParams GetDetectParams(UUID itemID, int idx)

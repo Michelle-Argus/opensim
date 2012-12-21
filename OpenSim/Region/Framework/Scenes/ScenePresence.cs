@@ -212,8 +212,6 @@ namespace OpenSim.Region.Framework.Scenes
 
         private Quaternion m_headrotation = Quaternion.Identity;
 
-        private string m_nextSitAnimation = String.Empty;
-
         //PauPaw:Proper PID Controler for autopilot************
         public bool MovingToTarget { get; private set; }
         public Vector3 MoveToPositionTarget { get; private set; }
@@ -1698,8 +1696,16 @@ namespace OpenSim.Region.Framework.Scenes
 //                "[SCENE PRESENCE]: Avatar {0} received request to move to position {1} in {2}",
 //                Name, pos, m_scene.RegionInfo.RegionName);
 
-            if (pos.X < 0 || pos.X >= Constants.RegionSize
-                || pos.Y < 0 || pos.Y >= Constants.RegionSize
+            // Allow move to another sub-region within a megaregion
+            Vector2 regionSize;
+            IRegionCombinerModule regionCombinerModule = m_scene.RequestModuleInterface<IRegionCombinerModule>();
+            if (regionCombinerModule != null)
+                regionSize = regionCombinerModule.GetSizeOfMegaregion(m_scene.RegionInfo.RegionID);
+            else
+                regionSize = new Vector2(Constants.RegionSize);
+
+            if (pos.X < 0 || pos.X >= regionSize.X
+                || pos.Y < 0 || pos.Y >= regionSize.Y
                 || pos.Z < 0)
                 return;
 
@@ -1713,7 +1719,16 @@ namespace OpenSim.Region.Framework.Scenes
 //                pos.Z = AbsolutePosition.Z;
 //            }
 
-            float terrainHeight = (float)m_scene.Heightmap[(int)pos.X, (int)pos.Y];
+            // Get terrain height for sub-region in a megaregion if necessary
+            int X = (int)((m_scene.RegionInfo.RegionLocX * Constants.RegionSize) + pos.X);
+            int Y = (int)((m_scene.RegionInfo.RegionLocY * Constants.RegionSize) + pos.Y);
+            UUID target_regionID = m_scene.GridService.GetRegionByPosition(m_scene.RegionInfo.ScopeID, X, Y).RegionID;
+            Scene targetScene = m_scene;
+
+            if (!SceneManager.Instance.TryGetScene(target_regionID, out targetScene))
+                targetScene = m_scene;
+
+            float terrainHeight = (float)targetScene.Heightmap[(int)(pos.X % Constants.RegionSize), (int)(pos.Y % Constants.RegionSize)];
             pos.Z = Math.Max(terrainHeight, pos.Z);
 
             // Fudge factor.  It appears that if one clicks "go here" on a piece of ground, the go here request is
@@ -1938,25 +1953,10 @@ namespace OpenSim.Region.Framework.Scenes
                 StandUp();
             }
 
-//            if (!String.IsNullOrEmpty(sitAnimation))
-//            {
-//                m_nextSitAnimation = sitAnimation;
-//            }
-//            else
-//            {
-            m_nextSitAnimation = "SIT";
-//            }
-
-            //SceneObjectPart part = m_scene.GetSceneObjectPart(targetID);
             SceneObjectPart part = FindNextAvailableSitTarget(targetID);
 
             if (part != null)
             {
-                if (!String.IsNullOrEmpty(part.SitAnimation))
-                {
-                    m_nextSitAnimation = part.SitAnimation;
-                }
-
                 m_requestedSitTargetID = part.LocalId;
                 m_requestedSitTargetUUID = targetID;
 
@@ -2171,18 +2171,6 @@ namespace OpenSim.Region.Framework.Scenes
 
         public void HandleAgentSit(IClientAPI remoteClient, UUID agentID)
         {
-            if (!String.IsNullOrEmpty(m_nextSitAnimation))
-            {
-                HandleAgentSit(remoteClient, agentID, m_nextSitAnimation);
-            }
-            else
-            {
-                HandleAgentSit(remoteClient, agentID, "SIT");
-            }
-        }
-
-        public void HandleAgentSit(IClientAPI remoteClient, UUID agentID, string sitAnimation)
-        {
             SceneObjectPart part = m_scene.GetSceneObjectPart(m_requestedSitTargetID);
 
             if (part != null)
@@ -2229,7 +2217,12 @@ namespace OpenSim.Region.Framework.Scenes
 
                 Velocity = Vector3.Zero;
                 RemoveFromPhysicalScene();
-        
+
+                String sitAnimation = "SIT";
+                if (!String.IsNullOrEmpty(part.SitAnimation))
+                {
+                    sitAnimation = part.SitAnimation;
+                }
                 Animator.TrySetMovementAnimation(sitAnimation);
                 SendAvatarDataToAllAgents();
             }

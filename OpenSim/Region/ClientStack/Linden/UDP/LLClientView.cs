@@ -5320,9 +5320,9 @@ namespace OpenSim.Region.ClientStack.LindenUDP
             AddLocalPacketHandler(PacketType.RemoveTaskInventory, HandleRemoveTaskInventory);
             AddLocalPacketHandler(PacketType.MoveTaskInventory, HandleMoveTaskInventory);
             AddLocalPacketHandler(PacketType.RezScript, HandleRezScript);
-            AddLocalPacketHandler(PacketType.MapLayerRequest, HandleMapLayerRequest, false);
-            AddLocalPacketHandler(PacketType.MapBlockRequest, HandleMapBlockRequest, false);
-            AddLocalPacketHandler(PacketType.MapNameRequest, HandleMapNameRequest, false);
+            AddLocalPacketHandler(PacketType.MapLayerRequest, HandleMapLayerRequest);
+            AddLocalPacketHandler(PacketType.MapBlockRequest, HandleMapBlockRequest);
+            AddLocalPacketHandler(PacketType.MapNameRequest, HandleMapNameRequest);
             AddLocalPacketHandler(PacketType.TeleportLandmarkRequest, HandleTeleportLandmarkRequest);
             AddLocalPacketHandler(PacketType.TeleportCancel, HandleTeleportCancel);
             AddLocalPacketHandler(PacketType.TeleportLocationRequest, HandleTeleportLocationRequest);
@@ -11864,11 +11864,13 @@ namespace OpenSim.Region.ClientStack.LindenUDP
                 if (logPacket)
                     m_log.DebugFormat(
                         "[CLIENT]: PACKET IN  from {0} ({1}) in {2} - {3}",
-                        Name, SceneAgent.IsChildAgent ? "child" : "root ", m_scene.RegionInfo.RegionName, packet.Type);
+                        Name, SceneAgent.IsChildAgent ? "child" : "root ", Scene.Name, packet.Type);
             }
 
             if (!ProcessPacketMethod(packet))
-                m_log.Warn("[CLIENT]: unhandled packet " + packet.Type);
+                m_log.WarnFormat(
+                    "[CLIENT]: Unhandled packet {0} from {1} ({2}) in {3}.  Ignoring.",
+                    packet.Type, Name, SceneAgent.IsChildAgent ? "child" : "root ", Scene.Name);
         }
 
         private static PrimitiveBaseShape GetShapeFromAddPacket(ObjectAddPacket addPacket)
