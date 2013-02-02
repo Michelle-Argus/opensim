@@ -407,16 +407,16 @@ namespace OpenSim.Region.Framework.Scenes
                 if (item.Owner != remoteClient.AgentId)
                     return;
 
-                if (UUID.Zero == transactionID)
-                {
-                    item.Name = itemUpd.Name;
-                    item.Description = itemUpd.Description;
+                item.Name = itemUpd.Name;
+                item.Description = itemUpd.Description;
 
 //                    m_log.DebugFormat(
 //                        "[USER INVENTORY]: itemUpd {0} {1} {2} {3}, item {4} {5} {6} {7}",
 //                        itemUpd.NextPermissions, itemUpd.GroupPermissions, itemUpd.EveryOnePermissions, item.Flags,
 //                        item.NextPermissions, item.GroupPermissions, item.EveryOnePermissions, item.CurrentPermissions);
 
+                if (itemUpd.NextPermissions != 0) // Use this to determine validity. Can never be 0 if valid
+                {
                     if (item.NextPermissions != (itemUpd.NextPermissions & item.BasePermissions))
                         item.Flags |= (uint)InventoryItemFlags.ObjectOverwriteNextOwner;
                     item.NextPermissions = itemUpd.NextPermissions & item.BasePermissions;
@@ -451,7 +451,8 @@ namespace OpenSim.Region.Framework.Scenes
 
                     InventoryService.UpdateItem(item);
                 }
-                else
+
+                if (UUID.Zero != transactionID)
                 {
                     if (AgentTransactionsModule != null)
                     {
@@ -1738,6 +1739,21 @@ namespace OpenSim.Region.Framework.Scenes
         /// <returns>The part where the script was rezzed if successful.  False otherwise.</returns>
         public SceneObjectPart RezNewScript(UUID agentID, InventoryItemBase itemBase)
         {
+            return RezNewScript(
+                agentID,
+                itemBase,
+                "default\n{\n    state_entry()\n    {\n        llSay(0, \"Script running\");\n    }\n}");
+        }
+
+        /// <summary>
+        /// Rez a new script from nothing with given script text.
+        /// </summary>
+        /// <param name="remoteClient"></param>
+        /// <param name="itemBase">Template item.</param>
+        /// <param name="scriptText"></param>
+        /// <returns>The part where the script was rezzed if successful.  False otherwise.</returns>
+        public SceneObjectPart RezNewScript(UUID agentID, InventoryItemBase itemBase, string scriptText)
+        {
             // The part ID is the folder ID!
             SceneObjectPart part = GetSceneObjectPart(itemBase.Folder);
             if (part == null)
@@ -1757,9 +1773,14 @@ namespace OpenSim.Region.Framework.Scenes
                 return null;
             }
 
-            AssetBase asset = CreateAsset(itemBase.Name, itemBase.Description, (sbyte)itemBase.AssetType,
-                Encoding.ASCII.GetBytes("default\n{\n    state_entry()\n    {\n        llSay(0, \"Script running\");\n    }\n}"),
-                agentID);
+            AssetBase asset 
+                = CreateAsset(
+                    itemBase.Name, 
+                    itemBase.Description, 
+                    (sbyte)itemBase.AssetType,
+                    Encoding.ASCII.GetBytes(scriptText), 
+                    agentID);
+
             AssetService.Store(asset);
 
             TaskInventoryItem taskItem = new TaskInventoryItem();

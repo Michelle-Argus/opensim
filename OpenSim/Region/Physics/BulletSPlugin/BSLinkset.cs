@@ -56,7 +56,7 @@ public abstract class BSLinkset
     {
         BSLinkset ret = null;
 
-        switch ((int)physScene.Params.linksetImplementation)
+        switch ((int)BSParam.LinksetImplementation)
         {
             case (int)LinksetImplementation.Constraint:
                 ret = new BSLinksetConstraints(physScene, parent);
@@ -97,14 +97,7 @@ public abstract class BSLinkset
     }
 
     // We keep the prim's mass in the linkset structure since it could be dependent on other prims
-    protected float m_mass;
-    public float LinksetMass
-    {
-        get
-        {
-            return m_mass;
-        }
-    }
+    public float LinksetMass { get; protected set; }
 
     public virtual bool LinksetIsColliding { get { return false; } }
 
@@ -128,7 +121,7 @@ public abstract class BSLinkset
         PhysicsScene = scene;
         LinksetRoot = parent;
         m_children = new HashSet<BSPhysObject>();
-        m_mass = parent.RawMass;
+        LinksetMass = parent.RawMass;
         Rebuilding = false;
     }
 
@@ -143,7 +136,7 @@ public abstract class BSLinkset
             // Don't add the root to its own linkset
             if (!IsRoot(child))
                 AddChildToLinkset(child);
-            m_mass = ComputeLinksetMass();
+            LinksetMass = ComputeLinksetMass();
         }
         return this;
     }
@@ -159,13 +152,15 @@ public abstract class BSLinkset
             if (IsRoot(child))
             {
                 // Cannot remove the root from a linkset.
+                child.PositionDisplacement = OMV.Vector3.Zero;
                 return this;
             }
             RemoveChildFromLinkset(child);
-            m_mass = ComputeLinksetMass();
+            LinksetMass = ComputeLinksetMass();
         }
 
         // The child is down to a linkset of just itself
+        child.PositionDisplacement = OMV.Vector3.Zero;
         return BSLinkset.Factory(PhysicsScene, child);
     }
 
@@ -230,7 +225,10 @@ public abstract class BSLinkset
     // When physical properties are changed the linkset needs to recalculate
     //   its internal properties.
     // May be called at runtime or taint-time.
-    public abstract void Refresh(BSPhysObject requestor);
+    public virtual void Refresh(BSPhysObject requestor)
+    {
+        LinksetMass = ComputeLinksetMass();
+    }
 
     // Flag denoting the linkset is in the process of being rebuilt.
     // Used to know not the schedule a rebuild in the middle of a rebuild.
@@ -254,7 +252,7 @@ public abstract class BSLinkset
     //      of the linkset is received.
     // Passed flag is update came from physics engine (true) or the user (false).
     // Called at taint-time!!
-    public abstract void UpdateProperties(BSPhysObject physObject, bool physicalUpdate);
+    public abstract void UpdateProperties(UpdatedProperties whichUpdated, BSPhysObject physObject);
 
     // Routine used when rebuilding the body of the root of the linkset
     // Destroy all the constraints have have been made to root.
@@ -262,11 +260,6 @@ public abstract class BSLinkset
     // Returns 'true' of something was actually removed and would need restoring
     // Called at taint-time!!
     public abstract bool RemoveBodyDependencies(BSPrim child);
-
-    // Companion to RemoveBodyDependencies(). If RemoveBodyDependencies() returns 'true',
-    //     this routine will restore the removed constraints.
-    // Called at taint-time!!
-    public abstract void RestoreBodyDependencies(BSPrim child);
 
     // ================================================================
     protected virtual float ComputeLinksetMass()
@@ -314,7 +307,7 @@ public abstract class BSLinkset
 
             foreach (BSPhysObject bp in m_children)
             {
-                com += bp.Position * bp.RawMass;
+                com += bp.Position;
             }
             com /= (m_children.Count + 1);
         }

@@ -200,6 +200,11 @@ namespace OpenSim.Region.Framework.Scenes
 
         private const int LAND_VELOCITYMAG_MAX = 12;
 
+        private const float FLY_ROLL_MAX_RADIANS = 1.1f;
+
+        private const float FLY_ROLL_RADIANS_PER_UPDATE = 0.06f;
+        private const float FLY_ROLL_RESET_RADIANS_PER_UPDATE = 0.02f;
+
         private float m_health = 100f;
 
         protected ulong crossingFromRegion;
@@ -560,8 +565,20 @@ namespace OpenSim.Region.Framework.Scenes
             set
             {
                 m_bodyRot = value;
+                if (PhysicsActor != null)
+                {
+                    PhysicsActor.Orientation = m_bodyRot;
+                }
 //                m_log.DebugFormat("[SCENE PRESENCE]: Body rot for {0} set to {1}", Name, m_bodyRot);
             }
+        }
+
+        // Used for limited viewer 'fake' user rotations.
+        private Vector3 m_AngularVelocity = Vector3.Zero;
+
+        public Vector3 AngularVelocity
+        {
+            get { return m_AngularVelocity; }
         }
 
         public bool IsChildAgent { get; set; }
@@ -685,6 +702,8 @@ namespace OpenSim.Region.Framework.Scenes
         }
 
         #endregion
+
+
 
         #region Constructor(s)
 
@@ -1028,6 +1047,85 @@ namespace OpenSim.Region.Framework.Scenes
         {
             ControllingClient.StopFlying(this);
         }
+
+        /// <summary>
+        /// Applies a roll accumulator to the avatar's angular velocity for the avatar fly roll effect.
+        /// </summary>
+        /// <param name="amount">Postive or negative roll amount in radians</param>
+        private void ApplyFlyingRoll(float amount, bool PressingUp, bool PressingDown)
+        {
+            
+            float rollAmount = Util.Clamp(m_AngularVelocity.Z + amount, -FLY_ROLL_MAX_RADIANS, FLY_ROLL_MAX_RADIANS);
+            m_AngularVelocity.Z = rollAmount;
+
+            // APPLY EXTRA consideration for flying up and flying down during this time.
+            // if we're turning left
+            if (amount > 0)
+            {
+
+                // If we're at the max roll and pressing up, we want to swing BACK a bit
+                // Automatically adds noise
+                if (PressingUp)
+                {
+                    if (m_AngularVelocity.Z >= FLY_ROLL_MAX_RADIANS - 0.04f)
+                        m_AngularVelocity.Z -= 0.9f;
+                }
+                // If we're at the max roll and pressing down, we want to swing MORE a bit
+                if (PressingDown)
+                {
+                    if (m_AngularVelocity.Z >= FLY_ROLL_MAX_RADIANS && m_AngularVelocity.Z < FLY_ROLL_MAX_RADIANS + 0.6f)
+                        m_AngularVelocity.Z += 0.6f;
+                }
+            }
+            else  // we're turning right.
+            {
+                // If we're at the max roll and pressing up, we want to swing BACK a bit
+                // Automatically adds noise
+                if (PressingUp)
+                {
+                    if (m_AngularVelocity.Z <= (-FLY_ROLL_MAX_RADIANS))
+                        m_AngularVelocity.Z += 0.6f;
+                }
+                // If we're at the max roll and pressing down, we want to swing MORE a bit
+                if (PressingDown)
+                {
+                    if (m_AngularVelocity.Z >= -FLY_ROLL_MAX_RADIANS - 0.6f)
+                        m_AngularVelocity.Z -= 0.6f;
+                }
+            }
+        }
+
+        /// <summary>
+        /// incrementally sets roll amount to zero
+        /// </summary>
+        /// <param name="amount">Positive roll amount in radians</param>
+        /// <returns></returns>
+        private float CalculateFlyingRollResetToZero(float amount)
+        {
+            const float rollMinRadians = 0f;
+
+            if (m_AngularVelocity.Z > 0)
+            {
+                
+                float leftOverToMin = m_AngularVelocity.Z - rollMinRadians;
+                if (amount > leftOverToMin)
+                    return -leftOverToMin;
+                else
+                    return -amount;
+
+            }
+            else
+            {
+                
+                float leftOverToMin = -m_AngularVelocity.Z - rollMinRadians;
+                if (amount > leftOverToMin)
+                    return leftOverToMin;
+                else
+                    return amount;
+            }
+        }
+        
+
 
         // neighbouring regions we have enabled a child agent in
         // holds the seed cap for the child agent in that region
@@ -1509,6 +1607,33 @@ namespace OpenSim.Region.Framework.Scenes
                     bool controlland = (((flags & AgentManager.ControlFlags.AGENT_CONTROL_UP_NEG) != 0) ||
                                         ((flags & AgentManager.ControlFlags.AGENT_CONTROL_NUDGE_UP_NEG) != 0));
 
+
+                   //m_log.Debug("[CONTROL]: " +flags);
+                    // Applies a satisfying roll effect to the avatar when flying.
+                    if (((flags & AgentManager.ControlFlags.AGENT_CONTROL_TURN_LEFT) != 0) && ((flags & AgentManager.ControlFlags.AGENT_CONTROL_YAW_POS) != 0))
+                    {
+
+                        ApplyFlyingRoll(FLY_ROLL_RADIANS_PER_UPDATE, ((flags & AgentManager.ControlFlags.AGENT_CONTROL_UP_POS) != 0), ((flags & AgentManager.ControlFlags.AGENT_CONTROL_UP_NEG) != 0));
+                        
+                        
+                    } 
+                    else if (((flags & AgentManager.ControlFlags.AGENT_CONTROL_TURN_RIGHT) != 0) &&
+                             ((flags & AgentManager.ControlFlags.AGENT_CONTROL_YAW_NEG) != 0))
+                    {
+                        ApplyFlyingRoll(-FLY_ROLL_RADIANS_PER_UPDATE, ((flags & AgentManager.ControlFlags.AGENT_CONTROL_UP_POS) != 0), ((flags & AgentManager.ControlFlags.AGENT_CONTROL_UP_NEG) != 0));
+                       
+
+                    }
+                    else
+                    {
+                        if (m_AngularVelocity.Z != 0)
+                            m_AngularVelocity.Z += CalculateFlyingRollResetToZero(FLY_ROLL_RESET_RADIANS_PER_UPDATE);
+                        
+                    }
+
+                   
+
+
                     if (Flying && IsColliding && controlland)
                     {
                         // nesting this check because LengthSquared() is expensive and we don't 
@@ -1950,6 +2075,9 @@ namespace OpenSim.Region.Framework.Scenes
         {
             if (ParentID != 0)
             {
+                if (ParentPart.UUID == targetID)
+                    return; // already sitting here, ignore
+
                 StandUp();
             }
 
@@ -2214,7 +2342,7 @@ namespace OpenSim.Region.Framework.Scenes
 
                 ParentPart = m_scene.GetSceneObjectPart(m_requestedSitTargetID);
                 ParentID = m_requestedSitTargetID;
-
+                m_AngularVelocity = Vector3.Zero;
                 Velocity = Vector3.Zero;
                 RemoveFromPhysicalScene();
 
@@ -2230,7 +2358,8 @@ namespace OpenSim.Region.Framework.Scenes
 
         public void HandleAgentSitOnGround()
         {
-//            m_updateCount = 0;  // Kill animation update burst so that the SIT_G.. will stick.
+//            m_updateCount = 0;  // Kill animation update burst so that the SIT_G.. will stick..
+            m_AngularVelocity = Vector3.Zero;
             Animator.TrySetMovementAnimation("SIT_GROUND_CONSTRAINED");
             SitGround = true;
             RemoveFromPhysicalScene();
@@ -2252,7 +2381,7 @@ namespace OpenSim.Region.Framework.Scenes
 
         public void HandleStopAnim(IClientAPI remoteClient, UUID animID)
         {
-            Animator.RemoveAnimation(animID);
+            Animator.RemoveAnimation(animID, false);
         }
 
         /// <summary>
@@ -2335,9 +2464,14 @@ namespace OpenSim.Region.Framework.Scenes
                 // storing a requested force instead of an actual traveling velocity
 
                 // Throw away duplicate or insignificant updates
-                if (!Rotation.ApproxEquals(m_lastRotation, ROTATION_TOLERANCE) ||
-                    !Velocity.ApproxEquals(m_lastVelocity, VELOCITY_TOLERANCE) ||
-                    !m_pos.ApproxEquals(m_lastPosition, POSITION_TOLERANCE))
+                if (
+                    // If the velocity has become zero, send it no matter what.
+                       (Velocity != m_lastVelocity && Velocity == Vector3.Zero)
+                    // otherwise, if things have changed reasonably, send the update
+                    || (!Rotation.ApproxEquals(m_lastRotation, ROTATION_TOLERANCE)
+                        || !Velocity.ApproxEquals(m_lastVelocity, VELOCITY_TOLERANCE)
+                        || !m_pos.ApproxEquals(m_lastPosition, POSITION_TOLERANCE)))
+
                 {
                     SendTerseUpdateToAllClients();
 

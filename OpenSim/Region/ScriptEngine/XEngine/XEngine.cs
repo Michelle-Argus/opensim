@@ -46,13 +46,14 @@ using OpenSim.Framework;
 using OpenSim.Framework.Console;
 using OpenSim.Region.Framework.Scenes;
 using OpenSim.Region.Framework.Interfaces;
+using OpenSim.Region.ScriptEngine.Interfaces;
 using OpenSim.Region.ScriptEngine.Shared;
-using OpenSim.Region.ScriptEngine.Shared.ScriptBase;
 using OpenSim.Region.ScriptEngine.Shared.CodeTools;
 using OpenSim.Region.ScriptEngine.Shared.Instance;
 using OpenSim.Region.ScriptEngine.Shared.Api;
 using OpenSim.Region.ScriptEngine.Shared.Api.Plugins;
-using OpenSim.Region.ScriptEngine.Interfaces;
+using OpenSim.Region.ScriptEngine.Shared.ScriptBase;
+using OpenSim.Region.ScriptEngine.XEngine.ScriptBase;
 using Timer = OpenSim.Region.ScriptEngine.Shared.Api.Plugins.Timer;
 
 using ScriptCompileQueue = OpenSim.Framework.LocklessQueue<object[]>;
@@ -169,10 +170,20 @@ namespace OpenSim.Region.ScriptEngine.XEngine
         IWorkItemResult m_CurrentCompile = null;
         private Dictionary<UUID, int> m_CompileDict = new Dictionary<UUID, int>();
 
+        private ScriptEngineConsoleCommands m_consoleCommands;
+
         public string ScriptEngineName
         {
             get { return "XEngine"; }
         }
+
+        public string ScriptClassName { get; private set; }
+
+        public string ScriptBaseClassName { get; private set; }
+
+        public ParameterInfo[] ScriptBaseClassParameters { get; private set; }
+
+        public string[] ScriptReferencedAssemblies { get; private set; }
 
         public Scene World
         {
@@ -228,20 +239,34 @@ namespace OpenSim.Region.ScriptEngine.XEngine
 
             m_ScriptConfig = configSource.Configs["XEngine"];
             m_ConfigSource = configSource;
+
+            string rawScriptStopStrategy = m_ScriptConfig.GetString("ScriptStopStrategy", "abort");
+
+            m_log.InfoFormat("[XEngine]: Script stop strategy is {0}", rawScriptStopStrategy);
+
+            if (rawScriptStopStrategy == "co-op")
+            {
+                ScriptClassName = "XEngineScript";
+                ScriptBaseClassName = typeof(XEngineScriptBase).FullName;
+                ScriptBaseClassParameters = typeof(XEngineScriptBase).GetConstructor(new Type[] { typeof(WaitHandle) }).GetParameters();
+                ScriptReferencedAssemblies = new string[] { Path.GetFileName(typeof(XEngineScriptBase).Assembly.Location) };
+            }
+            else
+            {
+                ScriptClassName = "Script";
+                ScriptBaseClassName = typeof(ScriptBaseClass).FullName;
+            }
+
+//            Console.WriteLine("ASSEMBLY NAME: {0}", ScriptReferencedAssemblies[0]);
         }
 
         public void AddRegion(Scene scene)
         {
             if (m_ScriptConfig == null)
                 return;
+
             m_ScriptFailCount = 0;
             m_ScriptErrorMessage = String.Empty;
-
-            if (m_ScriptConfig == null)
-            {
-//                m_log.ErrorFormat("[XEngine] No script configuration found. Scripts disabled");
-                return;
-            }
 
             m_Enabled = m_ScriptConfig.GetBoolean("Enabled", true);
 
@@ -318,50 +343,53 @@ namespace OpenSim.Region.ScriptEngine.XEngine
                 OnObjectRemoved += m_XmlRpcRouter.ObjectRemoved;
             }
 
+            m_consoleCommands = new ScriptEngineConsoleCommands(this);
+            m_consoleCommands.RegisterCommands();
+
             MainConsole.Instance.Commands.AddCommand(
                 "Scripts", false, "xengine status", "xengine status", "Show status information",
                 "Show status information on the script engine.",
                 HandleShowStatus);
 
             MainConsole.Instance.Commands.AddCommand(
-                "Scripts", false, "scripts show", "scripts show [<script-item-uuid>]", "Show script information",
+                "Scripts", false, "scripts show", "scripts show [<script-item-uuid>+]", "Show script information",
                 "Show information on all scripts known to the script engine.\n"
-                    + "If a <script-item-uuid> is given then only information on that script will be shown.",
+                    + "If one or more <script-item-uuid>s are given then only information on that script will be shown.",
                 HandleShowScripts);
 
             MainConsole.Instance.Commands.AddCommand(
-                "Scripts", false, "show scripts", "show scripts [<script-item-uuid>]", "Show script information",
+                "Scripts", false, "show scripts", "show scripts [<script-item-uuid>+]", "Show script information",
                 "Synonym for scripts show command", HandleShowScripts);
 
             MainConsole.Instance.Commands.AddCommand(
-                "Scripts", false, "scripts suspend", "scripts suspend [<script-item-uuid>]", "Suspends all running scripts",
+                "Scripts", false, "scripts suspend", "scripts suspend [<script-item-uuid>+]", "Suspends all running scripts",
                 "Suspends all currently running scripts.  This only suspends event delivery, it will not suspend a"
                     + " script that is currently processing an event.\n"
                     + "Suspended scripts will continue to accumulate events but won't process them.\n"
-                    + "If a <script-item-uuid> is given then only that script will be suspended.  Otherwise, all suitable scripts are suspended.",
+                    + "If one or more <script-item-uuid>s are given then only that script will be suspended.  Otherwise, all suitable scripts are suspended.",
                  (module, cmdparams) => HandleScriptsAction(cmdparams, HandleSuspendScript));
 
             MainConsole.Instance.Commands.AddCommand(
-                "Scripts", false, "scripts resume", "scripts resume [<script-item-uuid>]", "Resumes all suspended scripts",
+                "Scripts", false, "scripts resume", "scripts resume [<script-item-uuid>+]", "Resumes all suspended scripts",
                 "Resumes all currently suspended scripts.\n"
                     + "Resumed scripts will process all events accumulated whilst suspended.\n"
-                    + "If a <script-item-uuid> is given then only that script will be resumed.  Otherwise, all suitable scripts are resumed.",
+                    + "If one or more <script-item-uuid>s are given then only that script will be resumed.  Otherwise, all suitable scripts are resumed.",
                 (module, cmdparams) => HandleScriptsAction(cmdparams, HandleResumeScript));
 
             MainConsole.Instance.Commands.AddCommand(
-                "Scripts", false, "scripts stop", "scripts stop [<script-item-uuid>]", "Stops all running scripts",
+                "Scripts", false, "scripts stop", "scripts stop [<script-item-uuid>+]", "Stops all running scripts",
                 "Stops all running scripts.\n"
-                    + "If a <script-item-uuid> is given then only that script will be stopped.  Otherwise, all suitable scripts are stopped.",
+                    + "If one or more <script-item-uuid>s are given then only that script will be stopped.  Otherwise, all suitable scripts are stopped.",
                 (module, cmdparams) => HandleScriptsAction(cmdparams, HandleStopScript));
 
             MainConsole.Instance.Commands.AddCommand(
-                "Scripts", false, "scripts start", "scripts start [<script-item-uuid>]", "Starts all stopped scripts",
+                "Scripts", false, "scripts start", "scripts start [<script-item-uuid>+]", "Starts all stopped scripts",
                 "Starts all stopped scripts.\n"
-                    + "If a <script-item-uuid> is given then only that script will be started.  Otherwise, all suitable scripts are started.",
+                    + "If one or more <script-item-uuid>s are given then only that script will be started.  Otherwise, all suitable scripts are started.",
                 (module, cmdparams) => HandleScriptsAction(cmdparams, HandleStartScript));
 
             MainConsole.Instance.Commands.AddCommand(
-                "Scripts", false, "debug script log", "debug scripts log <item-id> <log-level>", "Extra debug logging for a script",
+                "Scripts", false, "debug scripts log", "debug scripts log <item-id> <log-level>", "Extra debug logging for a script",
                 "Activates or deactivates extra debug logging for the given script.\n"
                     + "Level == 0, deactivate extra debug logging.\n"
                     + "Level >= 1, log state changes.\n"
@@ -478,29 +506,31 @@ namespace OpenSim.Region.ScriptEngine.XEngine
                     return;
                 }
     
-                rawItemId = cmdparams[2];
-    
-                if (!UUID.TryParse(rawItemId, out itemId))
+                for (int i = 2; i < cmdparams.Length; i++)
                 {
-                    MainConsole.Instance.OutputFormat("ERROR: {0} is not a valid UUID", rawItemId);
-                    return;
-                }
-    
-                if (itemId != UUID.Zero)
-                {
-                    IScriptInstance instance = GetInstance(itemId);
-                    if (instance == null)
+                    rawItemId = cmdparams[i];
+        
+                    if (!UUID.TryParse(rawItemId, out itemId))
                     {
-                        // Commented out for now since this will cause false reports on simulators with more than
-                        // one scene where the current command line set region is 'root' (which causes commands to
-                        // go to both regions... (sigh)
-//                        MainConsole.Instance.OutputFormat("Error - No item found with id {0}", itemId);
-                        return;
+                        MainConsole.Instance.OutputFormat("ERROR: {0} is not a valid UUID", rawItemId);
+                        continue;
                     }
-                    else
+        
+                    if (itemId != UUID.Zero)
                     {
-                        action(instance);
-                        return;
+                        IScriptInstance instance = GetInstance(itemId);
+                        if (instance == null)
+                        {
+                            // Commented out for now since this will cause false reports on simulators with more than
+                            // one scene where the current command line set region is 'root' (which causes commands to
+                            // go to both regions... (sigh)
+    //                        MainConsole.Instance.OutputFormat("Error - No item found with id {0}", itemId);
+                            continue;
+                        }
+                        else
+                        {
+                            action(instance);
+                        }
                     }
                 }
             }
@@ -599,7 +629,6 @@ namespace OpenSim.Region.ScriptEngine.XEngine
             }
 
             StringBuilder sb = new StringBuilder();
-            Queue eq = instance.EventQueue;
 
             sb.AppendFormat("Script name         : {0}\n", instance.ScriptName);
             sb.AppendFormat("Status              : {0}\n", status);
@@ -1102,7 +1131,7 @@ namespace OpenSim.Region.ScriptEngine.XEngine
             }
 
             m_log.DebugFormat(
-                "[XEngine] Loading script {0}.{1}, item UUID {2}, prim UUID {3} @ {4}.{5}",
+                "[XEngine]: Loading script {0}.{1}, item UUID {2}, prim UUID {3} @ {4}.{5}",
                 part.ParentGroup.RootPart.Name, item.Name, itemID, part.UUID,
                 part.ParentGroup.RootPart.AbsolutePosition, part.ParentGroup.Scene.RegionInfo.RegionName);
 
@@ -1123,6 +1152,7 @@ namespace OpenSim.Region.ScriptEngine.XEngine
                     lock (m_AddingAssemblies)
                     {
                         m_Compiler.PerformScriptCompile(script, assetID.ToString(), item.OwnerID, out assembly, out linemap);
+                        
                         if (!m_AddingAssemblies.ContainsKey(assembly)) {
                             m_AddingAssemblies[assembly] = 1;
                         } else {
@@ -1172,7 +1202,9 @@ namespace OpenSim.Region.ScriptEngine.XEngine
                 }
                 catch (Exception e)
                 {
-//                    m_log.ErrorFormat("[XEngine]: Exception when rezzing script {0}{1}", e.Message, e.StackTrace);
+//                    m_log.ErrorFormat(
+//                        "[XEngine]: Exception when rezzing script with item ID {0}, {1}{2}", 
+//                        itemID, e.Message, e.StackTrace);
 
     //                try
     //                {
@@ -1277,11 +1309,12 @@ namespace OpenSim.Region.ScriptEngine.XEngine
                     m_DomainScripts[appDomain].Add(itemID);
 
                     instance = new ScriptInstance(this, part,
-                                                  itemID, assetID, assembly,
-                                                  m_AppDomains[appDomain],
-                                                  part.ParentGroup.RootPart.Name,
-                                                  item.Name, startParam, postOnRez,
-                                                  stateSource, m_MaxScriptQueue);
+                                                  item,
+                                                  startParam, postOnRez,
+                                                  m_MaxScriptQueue);
+
+                    if (!instance.Load(m_AppDomains[appDomain], assembly, stateSource))
+                        return false;
 
 //                    if (DebugLevel >= 1)
 //                    m_log.DebugFormat(
@@ -1479,7 +1512,8 @@ namespace OpenSim.Region.ScriptEngine.XEngine
             m_MaxScriptQueue = maxScriptQueue;
 
             STPStartInfo startInfo = new STPStartInfo();
-            startInfo.IdleTimeout = idleTimeout*1000; // convert to seconds as stated in .ini
+            startInfo.ThreadPoolName = "XEngine";
+            startInfo.IdleTimeout = idleTimeout * 1000; // convert to seconds as stated in .ini
             startInfo.MaxWorkerThreads = maxThreads;
             startInfo.MinWorkerThreads = minThreads;
             startInfo.ThreadPriority = threadPriority;;
@@ -1708,9 +1742,14 @@ namespace OpenSim.Region.ScriptEngine.XEngine
             IScriptInstance instance = GetInstance(itemID);
 
             if (instance != null)
+            {
                 instance.Stop(m_WaitForEventCompletionOnScriptStop);
+            }
             else
+            {
+//                m_log.DebugFormat("[XENGINE]: Could not find script with ID {0} to stop in {1}", itemID, World.Name);
                 m_runFlags.AddOrUpdate(itemID, false, 240);
+            }
         }
 
         public DetectParams GetDetectParams(UUID itemID, int idx)

@@ -299,6 +299,25 @@ namespace OpenSim.Framework
                 x;
         }
 
+        // Clamp the maximum magnitude of a vector
+        public static Vector3 ClampV(Vector3 x, float max)
+        {
+            Vector3 ret = x;
+            float lenSq = x.LengthSquared();
+            if (lenSq > (max * max))
+            {
+                x = x / x.Length() * max;
+            }
+            return x;
+        }
+
+        // Inclusive, within range test (true if equal to the endpoints)
+        public static bool InRange<T>(T x, T min, T max)
+            where T : IComparable<T>
+        {
+            return x.CompareTo(max) <= 0 && x.CompareTo(min) >= 0;
+        }
+
         public static uint GetNextXferID()
         {
             uint id = 0;
@@ -1639,7 +1658,13 @@ namespace OpenSim.Framework
             if (m_ThreadPool != null)
                 throw new InvalidOperationException("SmartThreadPool is already initialized");
 
-            m_ThreadPool = new SmartThreadPool(2000, maxThreads, 2);
+            STPStartInfo startInfo = new STPStartInfo();
+            startInfo.ThreadPoolName = "Util";
+            startInfo.IdleTimeout = 2000;
+            startInfo.MaxWorkerThreads = maxThreads;
+            startInfo.MinWorkerThreads = 2;
+
+            m_ThreadPool = new SmartThreadPool(startInfo);
         }
 
         public static int FireAndForgetCount()
@@ -1712,7 +1737,7 @@ namespace OpenSim.Framework
                     break;
                 case FireAndForgetMethod.SmartThreadPool:
                     if (m_ThreadPool == null)
-                        m_ThreadPool = new SmartThreadPool(2000, 15, 2);
+                        InitThreadPool(15); 
                     m_ThreadPool.QueueWorkItem(SmartThreadPoolCallback, new object[] { realCallback, obj });
                     break;
                 case FireAndForgetMethod.Thread:
@@ -2094,5 +2119,16 @@ namespace OpenSim.Framework
             return firstName + "." + lastName + " " + "@" + uri.Authority;
         }
         #endregion
+
+        /// <summary>
+        /// Escapes the special characters used in "LIKE".
+        /// </summary>
+        /// <remarks>
+        /// For example: EscapeForLike("foo_bar%baz") = "foo\_bar\%baz"
+        /// </remarks>
+        public static string EscapeForLike(string str)
+        {
+            return str.Replace("_", "\\_").Replace("%", "\\%");
+        }
     }
 }
