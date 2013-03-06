@@ -790,7 +790,8 @@ namespace OpenSim.Region.ClientStack.LindenUDP
             handshake.RegionInfo3.ColoName = Utils.EmptyBytes;
             handshake.RegionInfo3.ProductName = Util.StringToBytes256(regionInfo.RegionType);
             handshake.RegionInfo3.ProductSKU = Utils.EmptyBytes;
-
+            handshake.RegionInfo4 = new RegionHandshakePacket.RegionInfo4Block[0];
+            
             OutPacket(handshake, ThrottleOutPacketType.Task);
         }
 
@@ -2627,6 +2628,34 @@ namespace OpenSim.Region.ClientStack.LindenUDP
             }
         }
 
+        public void SendPartPhysicsProprieties(ISceneEntity entity)
+        {
+            SceneObjectPart part = (SceneObjectPart)entity;
+            if (part != null && AgentId != UUID.Zero)
+            {
+                try
+                {
+                    IEventQueue eq = Scene.RequestModuleInterface<IEventQueue>();
+                    if (eq != null)
+                    {
+                        uint localid = part.LocalId;
+                        byte physshapetype = part.PhysicsShapeType;
+                        float density = part.Density;
+                        float friction = part.Friction;
+                        float bounce = part.Restitution;
+                        float gravmod = part.GravityModifier;
+                        eq.partPhysicsProperties(localid, physshapetype, density, friction, bounce, gravmod,AgentId);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    m_log.Error("Unable to send part Physics Proprieties - exception: " + ex.ToString());
+                }
+                part.UpdatePhysRequired = false;
+            }
+        }
+
+
 
         public void SendGroupNameReply(UUID groupLLUID, string GroupName)
         {
@@ -3543,6 +3572,7 @@ namespace OpenSim.Region.ClientStack.LindenUDP
 
             avp.Sender.IsTrial = false;
             avp.Sender.ID = agentID;
+            avp.AppearanceData = new AvatarAppearancePacket.AppearanceDataBlock[0];
             //m_log.DebugFormat("[CLIENT]: Sending appearance for {0} to {1}", agentID.ToString(), AgentId.ToString());
             OutPacket(avp, ThrottleOutPacketType.Task);
         }
@@ -3773,6 +3803,14 @@ namespace OpenSim.Region.ClientStack.LindenUDP
                             {
                                 part.Shape.LightEntry = false;
                             }
+                        }
+
+                        if (part.Shape != null && (part.Shape.SculptType == (byte)SculptType.Mesh))
+                        {
+                            // Ensure that mesh has at least 8 valid faces
+                            part.Shape.ProfileBegin = 12500;
+                            part.Shape.ProfileEnd = 0;
+                            part.Shape.ProfileHollow = 27500;
                         }
                     }
     
@@ -4156,7 +4194,7 @@ namespace OpenSim.Region.ClientStack.LindenUDP
             pack.Stat = stats.StatsBlock;
 
             pack.Header.Reliable = false;
-
+            pack.RegionInfo = new SimStatsPacket.RegionInfoBlock[0];
             OutPacket(pack, ThrottleOutPacketType.Task);
         }
 
@@ -7035,10 +7073,33 @@ namespace OpenSim.Region.ClientStack.LindenUDP
                 // 46,47,48 are special positions within the packet
                 // This may change so perhaps we need a better way
                 // of storing this (OMV.FlagUpdatePacket.UsePhysics,etc?)
-                bool UsePhysics = (data[46] != 0) ? true : false;
-                bool IsTemporary = (data[47] != 0) ? true : false;
-                bool IsPhantom = (data[48] != 0) ? true : false;
-                handlerUpdatePrimFlags(flags.AgentData.ObjectLocalID, UsePhysics, IsTemporary, IsPhantom, this);
+                /*
+                                bool UsePhysics = (data[46] != 0) ? true : false;
+                                bool IsTemporary = (data[47] != 0) ? true : false;
+                                bool IsPhantom = (data[48] != 0) ? true : false;
+                                handlerUpdatePrimFlags(flags.AgentData.ObjectLocalID, UsePhysics, IsTemporary, IsPhantom, this);
+                 */
+                bool UsePhysics = flags.AgentData.UsePhysics;
+                bool IsPhantom = flags.AgentData.IsPhantom;
+                bool IsTemporary = flags.AgentData.IsTemporary;
+                ObjectFlagUpdatePacket.ExtraPhysicsBlock[] blocks = flags.ExtraPhysics;
+                ExtraPhysicsData physdata = new ExtraPhysicsData();
+
+                if (blocks == null || blocks.Length == 0)
+                {
+                    physdata.PhysShapeType = PhysShapeType.invalid;
+                }
+                else
+                {
+                    ObjectFlagUpdatePacket.ExtraPhysicsBlock phsblock = blocks[0];
+                    physdata.PhysShapeType = (PhysShapeType)phsblock.PhysicsShapeType;
+                    physdata.Bounce = phsblock.Restitution;
+                    physdata.Density = phsblock.Density;
+                    physdata.Friction = phsblock.Friction;
+                    physdata.GravitationModifier = phsblock.GravityMultiplier;   
+                }
+
+                handlerUpdatePrimFlags(flags.AgentData.ObjectLocalID, UsePhysics, IsTemporary, IsPhantom, physdata, this);
             }
             return true;
         }
@@ -12077,6 +12138,11 @@ namespace OpenSim.Region.ClientStack.LindenUDP
         public string XReport(string uptime, string version)
         {
             return String.Empty;
+        }
+
+        public OSDMap OReport(string uptime, string version)
+        {
+            return new OSDMap();
         }
 
         /// <summary>

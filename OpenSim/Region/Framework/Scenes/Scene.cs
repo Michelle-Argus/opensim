@@ -720,7 +720,6 @@ namespace OpenSim.Region.Framework.Scenes
         public Scene(RegionInfo regInfo, AgentCircuitManager authen,
                      SceneCommunicationService sceneGridService,
                      ISimulationDataService simDataService, IEstateDataService estateDataService,
-                     bool dumpAssetsToFile,
                      IConfigSource config, string simulatorVersion)
             : this(regInfo)
         {
@@ -811,8 +810,6 @@ namespace OpenSim.Region.Framework.Scenes
 
             RegisterDefaultSceneEvents();
 
-            DumpAssetsToFile = dumpAssetsToFile;
-
             // XXX: Don't set the public property since we don't want to activate here.  This needs to be handled 
             // better in the future.
             m_scripts_enabled = !RegionInfo.RegionSettings.DisableScripts;
@@ -900,7 +897,11 @@ namespace OpenSim.Region.Framework.Scenes
 
                 m_strictAccessControl = startupConfig.GetBoolean("StrictAccessControl", m_strictAccessControl);
 
-                m_generateMaptiles = startupConfig.GetBoolean("GenerateMaptiles", true);
+                string[] possibleMapConfigSections = new string[] { "Map", "Startup" };
+
+                m_generateMaptiles 
+                    = Util.GetConfigVarFromSections<bool>(config, "GenerateMaptiles", possibleMapConfigSections, true);
+
                 if (m_generateMaptiles)
                 {
                     int maptileRefresh = startupConfig.GetInt("MaptileRefresh", 0);
@@ -914,7 +915,10 @@ namespace OpenSim.Region.Framework.Scenes
                 }
                 else
                 {
-                    string tile = startupConfig.GetString("MaptileStaticUUID", UUID.Zero.ToString());
+                    string tile 
+                        = Util.GetConfigVarFromSections<string>(
+                            config, "MaptileStaticUUID", possibleMapConfigSections, UUID.Zero.ToString());
+
                     UUID tileID;
 
                     if (tile != UUID.Zero.ToString() && UUID.TryParse(tile, out tileID))
@@ -928,7 +932,12 @@ namespace OpenSim.Region.Framework.Scenes
                     }
                 }
 
-                string grant = startupConfig.GetString("AllowedClients", String.Empty);
+                string[] possibleAccessControlConfigSections = new string[] { "AccessControl", "Startup" };
+
+                string grant 
+                    = Util.GetConfigVarFromSections<string>(
+                        config, "AllowedClients", possibleAccessControlConfigSections, "");
+
                 if (grant.Length > 0)
                 {
                     foreach (string viewer in grant.Split('|'))
@@ -937,7 +946,10 @@ namespace OpenSim.Region.Framework.Scenes
                     }
                 }
 
-                grant = startupConfig.GetString("BannedClients", String.Empty);
+                grant 
+                    = Util.GetConfigVarFromSections<string>(
+                        config, "BannedClients", possibleAccessControlConfigSections, "");
+
                 if (grant.Length > 0)
                 {
                     foreach (string viewer in grant.Split('|'))
@@ -4482,19 +4494,6 @@ namespace OpenSim.Region.Framework.Scenes
 
         #region Script Engine
 
-        private List<ScriptEngineInterface> ScriptEngines = new List<ScriptEngineInterface>();
-        public bool DumpAssetsToFile;
-
-        /// <summary>
-        ///
-        /// </summary>
-        /// <param name="scriptEngine"></param>
-        public void AddScriptEngine(ScriptEngineInterface scriptEngine)
-        {
-            ScriptEngines.Add(scriptEngine);
-            scriptEngine.InitializeEngine(this);
-        }
-
         private bool ScriptDanger(SceneObjectPart part,Vector3 pos)
         {
             ILandObject parcel = LandChannel.GetLandObject(pos.X, pos.Y);
@@ -5522,8 +5521,13 @@ namespace OpenSim.Region.Framework.Scenes
 
                         if (banned)
                         {
-                            reason = "No suitable landing point found";
-                            return false;
+                            if(Permissions.IsAdministrator(agentID) == false || Permissions.IsGridGod(agentID) == false)
+                            {
+                                reason = "No suitable landing point found";
+                                return false;
+                            }
+                            reason = "Administrative access only";
+                            return true;
                         }
                     }
                 }

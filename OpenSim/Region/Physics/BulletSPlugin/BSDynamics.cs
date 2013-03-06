@@ -144,7 +144,7 @@ namespace OpenSim.Region.Physics.BulletSPlugin
             enableAngularVerticalAttraction = true;
             enableAngularDeflection = false;
             enableAngularBanking = false;
-            if (BSParam.VehicleDebuggingEnabled != ConfigurationParameters.numericFalse)
+            if (BSParam.VehicleDebuggingEnabled)
             {
                 enableAngularVerticalAttraction = true;
                 enableAngularDeflection = false;
@@ -597,7 +597,7 @@ namespace OpenSim.Region.Physics.BulletSPlugin
             if (IsActive)
             {
                 // Remember the mass so we don't have to fetch it every step
-                m_vehicleMass = Prim.Linkset.LinksetMass;
+                m_vehicleMass = Prim.TotalMass;
 
                 // Friction affects are handled by this vehicle code
                 PhysicsScene.PE.SetFriction(Prim.PhysBody, BSParam.VehicleFriction);
@@ -607,8 +607,8 @@ namespace OpenSim.Region.Physics.BulletSPlugin
                 // TODO: possibly set AngularFactor and LinearFactor for the type of vehicle.
                 //     Maybe compute linear and angular factor and damping from params.
                 PhysicsScene.PE.SetAngularDamping(Prim.PhysBody, BSParam.VehicleAngularDamping);
-                PhysicsScene.PE.SetLinearFactor(Prim.PhysBody, BSParam.VehicleLinearFactorV);
-                PhysicsScene.PE.SetAngularFactorV(Prim.PhysBody, BSParam.VehicleAngularFactorV);
+                PhysicsScene.PE.SetLinearFactor(Prim.PhysBody, BSParam.VehicleLinearFactor);
+                PhysicsScene.PE.SetAngularFactorV(Prim.PhysBody, BSParam.VehicleAngularFactor);
 
                 // Vehicles report collision events so we know when it's on the ground
                 PhysicsScene.PE.AddToCollisionFlags(Prim.PhysBody, CollisionFlags.BS_VEHICLE_COLLISIONS);
@@ -961,13 +961,13 @@ namespace OpenSim.Region.Physics.BulletSPlugin
             // ==================================================================
             // Clamp high or low velocities
             float newVelocityLengthSq = VehicleVelocity.LengthSquared();
-            if (newVelocityLengthSq > BSParam.VehicleMaxLinearVelocitySq)
+            if (newVelocityLengthSq > BSParam.VehicleMaxLinearVelocitySquared)
             {
                 Vector3 origVelW = VehicleVelocity;         // DEBUG DEBUG
                 VehicleVelocity /= VehicleVelocity.Length();
                 VehicleVelocity *= BSParam.VehicleMaxLinearVelocity;
                 VDetailLog("{0},  MoveLinear,clampMax,origVelW={1},lenSq={2},maxVelSq={3},,newVelW={4}", 
-                            Prim.LocalID, origVelW, newVelocityLengthSq, BSParam.VehicleMaxLinearVelocitySq, VehicleVelocity);
+                            Prim.LocalID, origVelW, newVelocityLengthSq, BSParam.VehicleMaxLinearVelocitySquared, VehicleVelocity);
             }
             else if (newVelocityLengthSq < 0.001f)
                 VehicleVelocity = Vector3.Zero;
@@ -1326,7 +1326,7 @@ namespace OpenSim.Region.Physics.BulletSPlugin
                 // If verticalError.Z is negative, the vehicle is upside down. Add additional push.
                 if (verticalError.Z < 0f)
                 {
-                    vertContributionV.X += PIOverFour;
+                    vertContributionV.X += Math.Sign(vertContributionV.X) * PIOverFour;
                     // vertContribution.Y -= PIOverFour;
                 }
 

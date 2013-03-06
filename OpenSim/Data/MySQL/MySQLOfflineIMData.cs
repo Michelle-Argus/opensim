@@ -25,14 +25,38 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-//TODO: WHERE TO PLACE THIS?
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Reflection;
 
-namespace OpenSim.Region.Framework.Scenes.Scripting
+using OpenSim.Framework;
+using OpenSim.Data.MySQL;
+
+using OpenMetaverse;
+using MySql.Data.MySqlClient;
+
+namespace OpenSim.Data.MySQL
 {
-    public interface ScriptEngineInterface
+    public class MySQLOfflineIMData : MySQLGenericTableHandler<OfflineIMData>, IOfflineIMData
     {
-        void InitializeEngine(Scene Sceneworld);
-        void Shutdown();
-//        void StartScript(string ScriptID, IScriptHost ObjectID);
+        public MySQLOfflineIMData(string connectionString, string realm)
+            : base(connectionString, realm, "IM_Store")
+        {
+        }
+
+        public void DeleteOld()
+        {
+            uint now = (uint)Util.UnixTimeSinceEpoch();
+
+            using (MySqlCommand cmd = new MySqlCommand())
+            {
+                cmd.CommandText = String.Format("delete from {0} where TMStamp < ?tstamp", m_Realm);
+                cmd.Parameters.AddWithValue("?tstamp", now - 14 * 24 * 60 * 60); // > 2 weeks old
+
+                ExecuteNonQuery(cmd);
+            }
+
+        }
     }
 }

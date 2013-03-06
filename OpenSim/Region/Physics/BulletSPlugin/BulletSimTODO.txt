@@ -1,12 +1,17 @@
 CURRENT PRIORITIES
 =================================================
-One sided meshes? Should terrain be built into a closed shape?
-	When meshes get partially wedged into the terrain, they cannot push themselves out.
-	It is possible that Bullet processes collisions whether entering or leaving a mesh.
-	Ref: http://bulletphysics.org/Bullet/phpBB3/viewtopic.php?t=4869
+Use the HACD convex hull routine in Bullet rather than the C# version.	
+	Speed up hullifying large meshes.
+Enable vehicle border crossings (at least as poorly as ODE)
+	Terrain skirts
+	Avatar created in previous region and not new region when crossing border
+	Vehicle recreated in new sim at small Z value (offset from root value?) (DONE)
+Lock axis
 Deleting a linkset while standing on the root will leave the physical shape of the root behind.
 	Not sure if it is because standing on it. Done with large prim linksets.
-Terrain detail: double terrain mesh detail
+Linkset child rotations.
+	Nebadon spiral tube has middle sections which are rotated wrong.
+	Select linked spiral tube. Delink and note where the middle section ends up.
 Vehicle angular vertical attraction
 vehicle angular banking
 Center-of-gravity
@@ -17,7 +22,6 @@ when should angular and linear motor targets be zeroed? when selected?
 Teravus llMoveToTarget script debug
 	Mixing of hover, buoyancy/gravity, moveToTarget, into one force
 	Setting hover height to zero disables hover even if hover flags are on (from SL wiki)
-Nebadon vehicles turning funny in arena
 limitMotorUp calibration (more down?)
 llRotLookAt
 llLookAt
@@ -26,14 +30,16 @@ Avatar movement
 	flying into a wall doesn't stop avatar who keeps appearing to move through the obstacle (DONE)
 	walking up stairs is not calibrated correctly (stairs out of Kepler cabin)
 	avatar capsule rotation completed (NOT DONE - Bullet's capsule shape is not the solution)
-Enable vehicle border crossings (at least as poorly as ODE)
-	Terrain skirts
-	Avatar created in previous region and not new region when crossing border
-	Vehicle recreated in new sim at small Z value (offset from root value?) (DONE)
 Vehicle script tuning/debugging
 	Avanti speed script
 	Weapon shooter script
-Add material densities to the material types
+Move material definitions (friction, ...) into simulator.
+Add material densities to the material types.
+Terrain detail: double terrain mesh detail
+One sided meshes? Should terrain be built into a closed shape?
+	When meshes get partially wedged into the terrain, they cannot push themselves out.
+	It is possible that Bullet processes collisions whether entering or leaving a mesh.
+	Ref: http://bulletphysics.org/Bullet/phpBB3/viewtopic.php?t=4869
 
 VEHICLES TODO LIST:
 =================================================
@@ -65,6 +71,13 @@ Vehicle attributes are not restored when a vehicle is rezzed on region creation
 
 GENERAL TODO LIST:
 =================================================
+Explore btGImpactMeshShape as alternative to convex hulls for simplified physical objects.
+	Regular triangle meshes don't do physical collisions.
+Resitution of a prim works on another prim but not on terrain.
+	The dropped prim doesn't bounce properly on the terrain.
+Add a sanity check for PIDTarget location.
+Level-of-detail for mesh creation. Prims with circular interiors require lod of 32.
+	Is much saved with lower LODs? At the moment, all set to 32.
 Collisions are inconsistant: arrows are supposed to hit and report collision. Often don't.
 	If arrow show at prim, collision reported about 1/3 of time. If collision reported,
 	both arrow and prim report it. The arrow bounces off the prim 9 out of 10 times.
@@ -128,6 +141,9 @@ Physical and phantom will drop through the terrain
 LINKSETS
 ======================================================
 Child prims do not report collisions
+Allow children of a linkset to be phantom:
+	http://opensim-dev.2196679.n2.nabble.com/Setting-a-single-child-prim-to-Phantom-tp7578513.html
+	Add OS_STATUS_PHANTOM_PRIM to llSetLinkPrimitaveParamsFast.
 Editing a child of a linkset causes the child to go phantom
 	Move a child prim once when it is physical and can never move it again without it going phantom
 Offset the center of the linkset to be the geometric center of all the prims
@@ -156,7 +172,6 @@ Create tests for different interface components
 	Have test objects/scripts measure themselves and turn color if correct/bad
 	Test functions in SL and calibrate correctness there
 	Create auto rezzer and tracker to run through the tests
-Use the HACD convex hull routine in Bullet rather than the C# version.
 Do we need to do convex hulls all the time? Can complex meshes be left meshes?
 	There is some problem with meshes and collisions
 	Hulls are not as detailed as meshes. Hulled vehicles insides are different shape.
@@ -328,3 +343,4 @@ Avatar standing on a moving object should start to move with the object. (DONE 2
 Angular motion around Z moves the vehicle in world Z and not vehicle Z in ODE.
 	Verify that angular motion specified around Z moves in the vehicle coordinates.
 	DONE 20130120: BulletSim properly applies force in vehicle relative coordinates.
+Nebadon vehicles turning funny in arena (DONE)

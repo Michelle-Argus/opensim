@@ -657,6 +657,12 @@ namespace OpenSim.Region.Framework.Scenes
 
         private bool m_inTransit;
 
+        /// <summary>
+        /// This signals whether the presence is in transit between neighbouring regions.
+        /// </summary>
+        /// <remarks> 
+        /// It is not set when the presence is teleporting or logging in/out directly to a region.
+        /// </remarks>
         public bool IsInTransit
         {
             get { return m_inTransit; }
@@ -1847,7 +1853,11 @@ namespace OpenSim.Region.Framework.Scenes
             // Get terrain height for sub-region in a megaregion if necessary
             int X = (int)((m_scene.RegionInfo.RegionLocX * Constants.RegionSize) + pos.X);
             int Y = (int)((m_scene.RegionInfo.RegionLocY * Constants.RegionSize) + pos.Y);
-            UUID target_regionID = m_scene.GridService.GetRegionByPosition(m_scene.RegionInfo.ScopeID, X, Y).RegionID;
+            GridRegion target_region = m_scene.GridService.GetRegionByPosition(m_scene.RegionInfo.ScopeID, X, Y);
+            // If X and Y is NaN, target_region will be null
+            if (target_region == null)
+                return;
+            UUID target_regionID = target_region.RegionID;
             Scene targetScene = m_scene;
 
             if (!SceneManager.Instance.TryGetScene(target_regionID, out targetScene))
@@ -4021,6 +4031,7 @@ namespace OpenSim.Region.Framework.Scenes
                 (m_teleportFlags & TeleportFlags.ViaLocation) != 0 ||
                 (m_teleportFlags & Constants.TeleportFlags.ViaHGLogin) != 0)
             {
+
                 if (GodLevel < 200 &&
                     ((!m_scene.Permissions.IsGod(m_uuid) &&
                     !m_scene.RegionInfo.EstateSettings.IsEstateManagerOrOwner(m_uuid)) || 
@@ -4029,7 +4040,14 @@ namespace OpenSim.Region.Framework.Scenes
                 {
                     SpawnPoint[] spawnPoints = m_scene.RegionInfo.RegionSettings.SpawnPoints().ToArray();
                     if (spawnPoints.Length == 0)
+                    {
+                        if(m_scene.RegionInfo.EstateSettings.IsEstateManagerOrOwner(m_uuid))
+                        {
+                            pos.X = 128.0f;
+                            pos.Y = 128.0f;
+                        }
                         return;
+                    }
 
                     int index;
                     bool selected = false;
@@ -4038,6 +4056,8 @@ namespace OpenSim.Region.Framework.Scenes
                     {
                         case "random":
 
+                            if (spawnPoints.Length == 0)
+                                return;
                             do
                             {
                                 index = Util.RandomClass.Next(spawnPoints.Length - 1);
@@ -4049,6 +4069,7 @@ namespace OpenSim.Region.Framework.Scenes
                                 // SpawnPoint sp = spawnPoints[index];
 
                                 ILandObject land = m_scene.LandChannel.GetLandObject(spawnPosition.X, spawnPosition.Y);
+
                                 if (land == null || land.IsEitherBannedOrRestricted(UUID))
                                     selected = false;
                                 else

@@ -27,20 +27,24 @@
 
 using OpenMetaverse;
 
-namespace OpenSim.Region.Framework.Scenes.Scripting
+namespace OpenSim.Framework
 {
-    public interface IScriptHost
+    public enum PhysShapeType : byte
     {
-        string Name { get; set; }
-        string Description { get; set; }
+        prim = 0,
+        none = 1,
+        convex = 2,
 
-        UUID UUID { get; }
-        UUID OwnerID { get; }
-        UUID CreatorID { get; }
-        Vector3 AbsolutePosition { get; }
+        invalid = 255 // use to mark invalid data in ExtraPhysicsData
+    }
 
-        string SitName { get; set; }
-        string TouchName { get; set; }
-        void SetText(string text, Vector3 color, double alpha);
+    public struct ExtraPhysicsData
+    {
+        public float Density;
+        public float GravitationModifier;
+        public float Friction;
+        public float Bounce;
+        public PhysShapeType PhysShapeType;
+
     }
 }

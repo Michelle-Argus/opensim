@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) Contributors, http://opensimulator.org/
  * See CONTRIBUTORS.TXT for a full list of copyright holders.
  *
@@ -26,66 +26,52 @@
  */
 
 using System;
-using OpenMetaverse;
-using log4net;
-using System.Reflection;
+using System.Collections.Generic;
+
 using OpenSim.Framework;
+using OpenSim.Region.Framework.Interfaces;
 
-namespace OpenSim.Region.Framework.Scenes.Scripting
+namespace OpenSim.Groups
 {
-    public class NullScriptHost : IScriptHost
+    public class ForeignImporter
     {
-        private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
-
-        private Vector3 m_pos = new Vector3(((int)Constants.RegionSize * 0.5f), ((int)Constants.RegionSize * 0.5f), 30);
-
-        public string Name
+        IUserManagement m_UserManagement;
+        public ForeignImporter(IUserManagement uman)
         {
-            get { return "Object"; }
-            set { }
+            m_UserManagement = uman;
         }
 
-        public string SitName
+        public GroupMembersData ConvertGroupMembersData(ExtendedGroupMembersData _m)
         {
-            get { return String.Empty; }
-            set { }
+            GroupMembersData m = new GroupMembersData();
+            m.AcceptNotices = _m.AcceptNotices;
+            m.AgentPowers = _m.AgentPowers;
+            m.Contribution = _m.Contribution;
+            m.IsOwner = _m.IsOwner;
+            m.ListInProfile = _m.ListInProfile;
+            m.OnlineStatus = _m.OnlineStatus;
+            m.Title = _m.Title;
+
+            string url = string.Empty, first = string.Empty, last = string.Empty, tmp = string.Empty;
+            Util.ParseUniversalUserIdentifier(_m.AgentID, out m.AgentID, out url, out first, out last, out tmp);
+            if (url != string.Empty)
+                m_UserManagement.AddUser(m.AgentID, first, last, url);
+
+            return m;
         }
 
-        public string TouchName
+        public GroupRoleMembersData ConvertGroupRoleMembersData(ExtendedGroupRoleMembersData _rm)
         {
-            get { return String.Empty; }
-            set { }
+            GroupRoleMembersData rm = new GroupRoleMembersData();
+            rm.RoleID = _rm.RoleID;
+
+            string url = string.Empty, first = string.Empty, last = string.Empty, tmp = string.Empty;
+            Util.ParseUniversalUserIdentifier(_rm.MemberID, out rm.MemberID, out url, out first, out last, out tmp);
+            if (url != string.Empty)
+                m_UserManagement.AddUser(rm.MemberID, first, last, url);
+
+            return rm;
         }
 
-        public string Description
-        {
-            get { return String.Empty; }
-            set { }
-        }
-
-        public UUID UUID
-        {
-            get { return UUID.Zero; }
-        }
-
-        public UUID OwnerID
-        {
-            get { return UUID.Zero; }
-        }
-
-        public UUID CreatorID
-        {
-            get { return UUID.Zero; }
-        }
-
-        public Vector3 AbsolutePosition
-        {
-            get { return m_pos; }
-        }
-
-        public void SetText(string text, Vector3 color, double alpha)
-        {
-            m_log.Warn("Tried to SetText "+text+" on NullScriptHost");
-        }
     }
 }

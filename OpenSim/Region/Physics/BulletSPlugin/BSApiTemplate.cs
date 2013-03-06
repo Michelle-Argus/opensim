@@ -174,32 +174,6 @@ public struct ConfigurationParameters
     public float collisionMargin;
     public float gravity;
 
-    public float XlinearDamping;
-    public float XangularDamping;
-    public float XdeactivationTime;
-    public float XlinearSleepingThreshold;
-    public float XangularSleepingThreshold;
-	public float XccdMotionThreshold;
-	public float XccdSweptSphereRadius;
-    public float XcontactProcessingThreshold;
-
-    public float XterrainImplementation;
-    public float XterrainFriction;
-    public float XterrainHitFraction;
-    public float XterrainRestitution;
-    public float XterrainCollisionMargin;
-
-    public float XavatarFriction;
-    public float XavatarStandingFriction;
-    public float XavatarDensity;
-    public float XavatarRestitution;
-    public float XavatarCapsuleWidth;
-    public float XavatarCapsuleDepth;
-    public float XavatarCapsuleHeight;
-	public float XavatarContactProcessingThreshold;
-
-    public float XvehicleAngularDamping;
-
 	public float maxPersistantManifoldPoolSize;
 	public float maxCollisionAlgorithmPoolSize;
 	public float shouldDisableContactPoolDynamicAllocation;
@@ -208,17 +182,10 @@ public struct ConfigurationParameters
 	public float shouldSplitSimulationIslands;
 	public float shouldEnableFrictionCaching;
 	public float numberOfSolverIterations;
+    public float useSingleSidedMeshes;
+	public float globalContactBreakingThreshold;
 
-    public float XlinksetImplementation;
-    public float XlinkConstraintUseFrameOffset;
-    public float XlinkConstraintEnableTransMotor;
-    public float XlinkConstraintTransMotorMaxVel;
-    public float XlinkConstraintTransMotorMaxForce;
-    public float XlinkConstraintERP;
-    public float XlinkConstraintCFM;
-    public float XlinkConstraintSolverIterations;
-
-    public float XphysicsLoggingFrames;
+    public float physicsLoggingFrames;
 
     public const float numericTrue = 1f;
     public const float numericFalse = 0f;
@@ -258,9 +225,10 @@ public enum CollisionFlags : uint
     CF_DISABLE_VISUALIZE_OBJECT      = 1 << 5,
     CF_DISABLE_SPU_COLLISION_PROCESS = 1 << 6,
     // Following used by BulletSim to control collisions and updates
-    BS_SUBSCRIBE_COLLISION_EVENTS    = 1 << 10,
-    BS_FLOATS_ON_WATER               = 1 << 11,
-    BS_VEHICLE_COLLISIONS            = 1 << 12,
+    BS_SUBSCRIBE_COLLISION_EVENTS    = 1 << 10, // return collision events from unmanaged to managed
+    BS_FLOATS_ON_WATER               = 1 << 11, // the object should float at water level
+    BS_VEHICLE_COLLISIONS            = 1 << 12, // return collisions for vehicle ground checking
+    BS_RETURN_ROOT_COMPOUND_SHAPE    = 1 << 13, // return the pos/rot of the root shape in a compound shape
     BS_NONE                          = 0,
     BS_ALL                           = 0xFFFFFFFF
 };
@@ -397,10 +365,37 @@ public abstract BulletConstraint Create6DofConstraintToPoint(BulletWorld world, 
                     Vector3 joinPoint,
                     bool useLinearReferenceFrameA, bool disableCollisionsBetweenLinkedBodies);
 
+public abstract BulletConstraint Create6DofConstraintFixed(BulletWorld world, BulletBody obj1,
+                    Vector3 frameInBloc, Quaternion frameInBrot, 
+                    bool useLinearReferenceFrameB, bool disableCollisionsBetweenLinkedBodies);
+
+public abstract BulletConstraint Create6DofSpringConstraint(BulletWorld world, BulletBody obj1, BulletBody obj2,
+                    Vector3 frame1loc, Quaternion frame1rot,
+                    Vector3 frame2loc, Quaternion frame2rot,
+                    bool useLinearReferenceFrameA, bool disableCollisionsBetweenLinkedBodies);
+
 public abstract BulletConstraint CreateHingeConstraint(BulletWorld world, BulletBody obj1, BulletBody obj2,
                     Vector3 pivotinA, Vector3 pivotinB,
                     Vector3 axisInA, Vector3 axisInB,
                     bool useLinearReferenceFrameA, bool disableCollisionsBetweenLinkedBodies);
+
+public abstract BulletConstraint CreateSliderConstraint(BulletWorld world, BulletBody obj1, BulletBody obj2,
+                    Vector3 frameInAloc, Quaternion frameInArot,
+                    Vector3 frameInBloc, Quaternion frameInBrot,
+                    bool useLinearReferenceFrameA, bool disableCollisionsBetweenLinkedBodies);
+
+public abstract BulletConstraint CreateConeTwistConstraint(BulletWorld world, BulletBody obj1, BulletBody obj2,
+                    Vector3 frameInAloc, Quaternion frameInArot,
+                    Vector3 frameInBloc, Quaternion frameInBrot,
+                    bool disableCollisionsBetweenLinkedBodies);
+
+public abstract BulletConstraint CreateGearConstraint(BulletWorld world, BulletBody obj1, BulletBody obj2,
+                    Vector3 axisInA, Vector3 axisInB,
+                    float ratio, bool disableCollisionsBetweenLinkedBodies);
+
+public abstract BulletConstraint CreatePoint2PointConstraint(BulletWorld world, BulletBody obj1, BulletBody obj2,
+                    Vector3 pivotInA, Vector3 pivotInB,
+                    bool disableCollisionsBetweenLinkedBodies);
 
 public abstract void SetConstraintEnable(BulletConstraint constrain, float numericTrueFalse);
 
