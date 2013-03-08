@@ -247,7 +247,10 @@ namespace OpenSim.Region.CoreModules.World.Permissions
                     GrantYP.Add(uuid, true);
                 }
             }
-            grant = myConfig.GetString("agent_list_is_god", String.Empty);
+            grant = Util.GetConfigVarFromSections<string>(config, "agent_list_is_god",
+                new string[] { "Startup", "Permissions" }, string.Empty); 
+                
+                
             if (grant.Length > 0)
             {
                 foreach (string uuidl in grant.Split(','))
