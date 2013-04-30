@@ -51,6 +51,7 @@ using OpenSim.Region.Physics.Manager;
 using Timer=System.Timers.Timer;
 using TPFlags = OpenSim.Framework.Constants.TeleportFlags;
 using GridRegion = OpenSim.Services.Interfaces.GridRegion;
+using PermissionMask = OpenSim.Framework.PermissionMask;
 
 namespace OpenSim.Region.Framework.Scenes
 {
@@ -2541,7 +2542,6 @@ namespace OpenSim.Region.Framework.Scenes
 
                 }
             }
-            
 
             return null;
         }
@@ -2739,9 +2739,12 @@ namespace OpenSim.Region.Framework.Scenes
 //                        "[ATTACHMENT]: Attach to avatar {0} at position {1}", sp.UUID, grp.AbsolutePosition);
 
                     RootPrim.RemFlag(PrimFlags.TemporaryOnRez);
-                    
+
+                    // We must currently not resume scripts at this stage since AttachmentsModule does not have the 
+                    // information that this is due to a teleport/border cross rather than an ordinary attachment.
+                    // We currently do this in Scene.MakeRootAgent() instead.
                     if (AttachmentsModule != null)
-                        AttachmentsModule.AttachObject(sp, grp, 0, false, false);
+                        AttachmentsModule.AttachObject(sp, grp, 0, false, false, true);
                 }
                 else
                 {
@@ -2820,20 +2823,6 @@ namespace OpenSim.Region.Framework.Scenes
                     m_eventManager.TriggerOnNewPresence(sp);
     
                     sp.TeleportFlags = (TPFlags)aCircuit.teleportFlags;
-    
-                    // The first agent upon login is a root agent by design.
-                    // For this agent we will have to rez the attachments.
-                    // All other AddNewClient calls find aCircuit.child to be true.
-                    if (aCircuit.child == false)
-                    {
-                        // We have to set SP to be a root agent here so that SP.MakeRootAgent() will later not try to
-                        // start the scripts again (since this is done in RezAttachments()).
-                        // XXX: This is convoluted.
-                        sp.IsChildAgent = false;
-    
-                        if (AttachmentsModule != null)
-                            Util.FireAndForget(delegate(object o) { AttachmentsModule.RezAttachments(sp); });
-                    }
                 }
                 else
                 {
@@ -3704,7 +3693,7 @@ namespace OpenSim.Region.Framework.Scenes
                 //On login test land permisions
                 if (vialogin)
                 {
-                    if (land != null && !TestLandRestrictions(agent, land, out reason))
+                    if (land != null && !TestLandRestrictions(agent.AgentID, out reason, ref agent.startpos.X, ref agent.startpos.Y))
                     {
                         return false;
                     }
@@ -3879,20 +3868,37 @@ namespace OpenSim.Region.Framework.Scenes
             return true;
         }
 
-        private bool TestLandRestrictions(AgentCircuitData agent, ILandObject land,  out string reason)
+        public bool TestLandRestrictions(UUID agentID, out string reason, ref float posX, ref float posY)
         {
-            bool banned = land.IsBannedFromLand(agent.AgentID);
-            bool restricted = land.IsRestrictedFromLand(agent.AgentID);
+            if (posX < 0)
+                posX = 0;
+            else if (posX >= 256)
+                posX = 255.999f;
+            if (posY < 0)
+                posY = 0;
+            else if (posY >= 256)
+                posY = 255.999f;
+
+            reason = String.Empty;
+            if (Permissions.IsGod(agentID))
+                return true;
+
+            ILandObject land = LandChannel.GetLandObject(posX, posY);
+            if (land == null)
+                return false;
+
+            bool banned = land.IsBannedFromLand(agentID);
+            bool restricted = land.IsRestrictedFromLand(agentID);
 
             if (banned || restricted)
             {
-                ILandObject nearestParcel = GetNearestAllowedParcel(agent.AgentID, agent.startpos.X, agent.startpos.Y);
+                ILandObject nearestParcel = GetNearestAllowedParcel(agentID, posX, posY);
                 if (nearestParcel != null)
                 {
                     //Move agent to nearest allowed
                     Vector3 newPosition = GetParcelCenterAtGround(nearestParcel);
-                    agent.startpos.X = newPosition.X;
-                    agent.startpos.Y = newPosition.Y;
+                    posX = newPosition.X;
+                    posY = newPosition.Y;
                 }
                 else
                 {
@@ -4117,33 +4123,33 @@ namespace OpenSim.Region.Framework.Scenes
 //            }
 //        }
 
-        /// <summary>
-        /// Triggered when an agent crosses into this sim.  Also happens on initial login.
-        /// </summary>
-        /// <param name="agentID"></param>
-        /// <param name="position"></param>
-        /// <param name="isFlying"></param>
-        public virtual void AgentCrossing(UUID agentID, Vector3 position, bool isFlying)
-        {
-            ScenePresence presence = GetScenePresence(agentID);
-            if (presence != null)
-            {
-                try
-                {
-                    presence.MakeRootAgent(position, isFlying);
-                }
-                catch (Exception e)
-                {
-                    m_log.ErrorFormat("[SCENE]: Unable to do agent crossing, exception {0}{1}", e.Message, e.StackTrace);
-                }
-            }
-            else
-            {
-                m_log.ErrorFormat(
-                    "[SCENE]: Could not find presence for agent {0} crossing into scene {1}",
-                    agentID, RegionInfo.RegionName);
-            }
-        }
+//        /// <summary>
+//        /// Triggered when an agent crosses into this sim.  Also happens on initial login.
+//        /// </summary>
+//        /// <param name="agentID"></param>
+//        /// <param name="position"></param>
+//        /// <param name="isFlying"></param>
+//        public virtual void AgentCrossing(UUID agentID, Vector3 position, bool isFlying)
+//        {
+//            ScenePresence presence = GetScenePresence(agentID);
+//            if (presence != null)
+//            {
+//                try
+//                {
+//                    presence.MakeRootAgent(position, isFlying);
+//                }
+//                catch (Exception e)
+//                {
+//                    m_log.ErrorFormat("[SCENE]: Unable to do agent crossing, exception {0}{1}", e.Message, e.StackTrace);
+//                }
+//            }
+//            else
+//            {
+//                m_log.ErrorFormat(
+//                    "[SCENE]: Could not find presence for agent {0} crossing into scene {1}",
+//                    agentID, RegionInfo.RegionName);
+//            }
+//        }
 
         /// <summary>
         /// We've got an update about an agent that sees into this region, 
@@ -5149,9 +5155,14 @@ namespace OpenSim.Region.Framework.Scenes
             get { return m_allowScriptCrossings; }
         }
 
-        public Vector3? GetNearestAllowedPosition(ScenePresence avatar)
+        public Vector3 GetNearestAllowedPosition(ScenePresence avatar)
         {
-            ILandObject nearestParcel = GetNearestAllowedParcel(avatar.UUID, avatar.AbsolutePosition.X, avatar.AbsolutePosition.Y);
+            return GetNearestAllowedPosition(avatar, null);
+        }
+
+        public Vector3 GetNearestAllowedPosition(ScenePresence avatar, ILandObject excludeParcel)
+        {
+            ILandObject nearestParcel = GetNearestAllowedParcel(avatar.UUID, avatar.AbsolutePosition.X, avatar.AbsolutePosition.Y, excludeParcel);
 
             if (nearestParcel != null)
             {
@@ -5160,10 +5171,7 @@ namespace OpenSim.Region.Framework.Scenes
                 Vector3? nearestPoint = GetNearestPointInParcelAlongDirectionFromPoint(avatar.AbsolutePosition, dir, nearestParcel);
                 if (nearestPoint != null)
                 {
-//                    m_log.DebugFormat(
-//                        "[SCENE]: Found a sane previous position based on velocity for {0}, sending them to {1} in {2}",
-//                        avatar.Name, nearestPoint, nearestParcel.LandData.Name);
-
+                    Debug.WriteLine("Found a sane previous position based on velocity, sending them to: " + nearestPoint.ToString());
                     return nearestPoint.Value;
                 }
 
@@ -5173,24 +5181,27 @@ namespace OpenSim.Region.Framework.Scenes
                 nearestPoint = GetNearestPointInParcelAlongDirectionFromPoint(avatar.AbsolutePosition, dir, nearestParcel);
                 if (nearestPoint != null)
                 {
-//                    m_log.DebugFormat(
-//                        "[SCENE]: {0} had a zero velocity, sending them to {1}", avatar.Name, nearestPoint);
-
+                    Debug.WriteLine("They had a zero velocity, sending them to: " + nearestPoint.ToString());
                     return nearestPoint.Value;
                 }
 
-                //Ultimate backup if we have no idea where they are
-//                m_log.DebugFormat(
-//                    "[SCENE]: No idea where {0} is, sending them to {1}", avatar.Name, avatar.lastKnownAllowedPosition);
+                ILandObject dest = LandChannel.GetLandObject(avatar.lastKnownAllowedPosition.X, avatar.lastKnownAllowedPosition.Y);
+                if (dest !=  excludeParcel)
+                {
+                    // Ultimate backup if we have no idea where they are and
+                    // the last allowed position was in another parcel
+                    Debug.WriteLine("Have no idea where they are, sending them to: " + avatar.lastKnownAllowedPosition.ToString());
+                    return avatar.lastKnownAllowedPosition;
+                }
 
-                return avatar.lastKnownAllowedPosition;
+                // else fall through to region edge
             }
 
             //Go to the edge, this happens in teleporting to a region with no available parcels
             Vector3 nearestRegionEdgePoint = GetNearestRegionEdgePosition(avatar);
 
             //Debug.WriteLine("They are really in a place they don't belong, sending them to: " + nearestRegionEdgePoint.ToString());
-            
+
             return nearestRegionEdgePoint;
         }
 
@@ -5217,13 +5228,18 @@ namespace OpenSim.Region.Framework.Scenes
 
         public ILandObject GetNearestAllowedParcel(UUID avatarId, float x, float y)
         {
+            return GetNearestAllowedParcel(avatarId, x, y, null);
+        }
+
+        public ILandObject GetNearestAllowedParcel(UUID avatarId, float x, float y, ILandObject excludeParcel)
+        {
             List<ILandObject> all = AllParcels();
             float minParcelDistance = float.MaxValue;
             ILandObject nearestParcel = null;
 
             foreach (var parcel in all)
             {
-                if (!parcel.IsEitherBannedOrRestricted(avatarId))
+                if (!parcel.IsEitherBannedOrRestricted(avatarId) && parcel != excludeParcel)
                 {
                     float parcelDistance = GetParcelDistancefromPoint(parcel, x, y);
                     if (parcelDistance < minParcelDistance)
@@ -5372,12 +5388,12 @@ namespace OpenSim.Region.Framework.Scenes
            List<SceneObjectGroup> objects, 
            out float minX, out float maxX, out float minY, out float maxY, out float minZ, out float maxZ)
         {
-            minX = 256;
-            maxX = -256;
-            minY = 256;
-            maxY = -256;
-            minZ = 8192;
-            maxZ = -256;
+            minX = float.MaxValue;
+            maxX = float.MinValue;
+            minY = float.MaxValue;
+            maxY = float.MinValue;
+            minZ = float.MaxValue;
+            maxZ = float.MinValue;
 
             List<Vector3> offsets = new List<Vector3>();
 
@@ -5467,6 +5483,8 @@ namespace OpenSim.Region.Framework.Scenes
         /// <returns></returns>
         public bool QueryAccess(UUID agentID, Vector3 position, out string reason)
         {
+            reason = "You are banned from the region";
+
             if (EntityTransferModule.IsInTransit(agentID))
             {
                 reason = "Agent is still in transit from this region";
@@ -5476,6 +5494,12 @@ namespace OpenSim.Region.Framework.Scenes
                     agentID, RegionInfo.RegionName);
 
                 return false;
+            }
+
+            if (Permissions.IsGod(agentID))
+            {
+                reason = String.Empty;
+                return true;
             }
 
             // FIXME: Root agent count is currently known to be inaccurate.  This forces a recount before we check.
@@ -5496,6 +5520,41 @@ namespace OpenSim.Region.Framework.Scenes
 
                     return false;
                 }
+            }
+
+            ScenePresence presence = GetScenePresence(agentID);
+            IClientAPI client = null;
+            AgentCircuitData aCircuit = null;
+
+            if (presence != null)
+            {
+                client = presence.ControllingClient;
+                if (client != null)
+                    aCircuit = client.RequestClientInfo();
+            }
+
+            // We may be called before there is a presence or a client.
+            // Fake AgentCircuitData to keep IAuthorizationModule smiling
+            if (client == null)
+            {
+                aCircuit = new AgentCircuitData();
+                aCircuit.AgentID = agentID;
+                aCircuit.firstname = String.Empty;
+                aCircuit.lastname = String.Empty;
+            }
+
+            try
+            {
+                if (!AuthorizeUser(aCircuit, out reason))
+                {
+                    // m_log.DebugFormat("[SCENE]: Denying access for {0}", agentID);
+                    return false;
+                }
+            }
+            catch (Exception e)
+            {
+                m_log.DebugFormat("[SCENE]: Exception authorizing agent: {0} "+ e.StackTrace, e.Message);
+                return false;
             }
 
             if (position == Vector3.Zero) // Teleport
@@ -5531,6 +5590,27 @@ namespace OpenSim.Region.Framework.Scenes
                         }
                     }
                 }
+
+                float posX = 128.0f;
+                float posY = 128.0f;
+
+                if (!TestLandRestrictions(agentID, out reason, ref posX, ref posY))
+                {
+                    // m_log.DebugFormat("[SCENE]: Denying {0} because they are banned on all parcels", agentID);
+                    return false;
+                }
+            }
+            else // Walking
+            {
+                ILandObject land = LandChannel.GetLandObject(position.X, position.Y);
+                if (land == null)
+                    return false;
+
+                bool banned = land.IsBannedFromLand(agentID);
+                bool restricted = land.IsRestrictedFromLand(agentID);
+
+                if (banned || restricted)
+                    return false;
             }
 
             reason = String.Empty;

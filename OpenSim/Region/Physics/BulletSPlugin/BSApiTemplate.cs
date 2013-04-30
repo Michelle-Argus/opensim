@@ -70,6 +70,7 @@ public enum BSPhysicsShapeType
 	SHAPE_COMPOUND  = 22,
 	SHAPE_HEIGHTMAP = 23,
     SHAPE_AVATAR    = 24,
+    SHAPE_CONVEXHULL= 25,
 };
 
 // The native shapes have predefined shape hash keys
@@ -191,6 +192,21 @@ public struct ConfigurationParameters
     public const float numericFalse = 0f;
 }
 
+// Parameters passed for the conversion of a mesh to a hull using Bullet's HACD library.
+[StructLayout(LayoutKind.Sequential)]
+public struct HACDParams
+{
+                                            // usual default values
+	public float maxVerticesPerHull;		// 100
+	public float minClusters;				// 2
+	public float compacityWeight;			// 0.1
+	public float volumeWeight;				// 0.0
+	public float concavity;				    // 100
+	public float addExtraDistPoints;		// false
+	public float addNeighboursDistPoints;	// false
+	public float addFacesPoints;			// false
+	public float shouldAdjustCollisionMargin;	// false
+}
 
 // The states a bullet collision object can have
 public enum ActivationState : uint
@@ -308,7 +324,13 @@ public abstract BulletShape CreateMeshShape(BulletWorld world,
 public abstract BulletShape CreateHullShape(BulletWorld world,
                 int hullCount, float[] hulls);
 
-public abstract BulletShape BuildHullShapeFromMesh(BulletWorld world, BulletShape meshShape);
+public abstract BulletShape BuildHullShapeFromMesh(BulletWorld world, BulletShape meshShape, HACDParams parms);
+
+public abstract BulletShape BuildConvexHullShapeFromMesh(BulletWorld world, BulletShape meshShape);
+
+public abstract BulletShape CreateConvexHullShape(BulletWorld world,
+                int indicesCount, int[] indices,
+                int verticesCount, float[] vertices );
 
 public abstract BulletShape BuildNativeShape(BulletWorld world, ShapeData shapeData);
 

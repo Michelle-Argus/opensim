@@ -1773,10 +1773,19 @@ private sealed class BulletConstraintXNA : BulletConstraint
         return new BulletShapeXNA(compoundshape, BSPhysicsShapeType.SHAPE_HULL);
     }
 
-    public override BulletShape BuildHullShapeFromMesh(BulletWorld world, BulletShape meshShape)
+    public override BulletShape BuildHullShapeFromMesh(BulletWorld world, BulletShape meshShape, HACDParams parms)
     {
         /* TODO */ return null;
+    }
 
+    public override BulletShape BuildConvexHullShapeFromMesh(BulletWorld world, BulletShape meshShape)
+    {
+        /* TODO */ return null;
+    }
+
+    public override BulletShape CreateConvexHullShape(BulletWorld pWorld, int pIndicesCount, int[] indices, int pVerticesCount, float[] verticesAsFloats)
+    {
+        /* TODO */ return null;
     }
 
     public override BulletShape CreateMeshShape(BulletWorld pWorld, int pIndicesCount, int[] indices, int pVerticesCount, float[] verticesAsFloats)

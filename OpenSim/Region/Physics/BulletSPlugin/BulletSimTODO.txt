@@ -6,7 +6,6 @@ Enable vehicle border crossings (at least as poorly as ODE)
 	Terrain skirts
 	Avatar created in previous region and not new region when crossing border
 	Vehicle recreated in new sim at small Z value (offset from root value?) (DONE)
-Lock axis
 Deleting a linkset while standing on the root will leave the physical shape of the root behind.
 	Not sure if it is because standing on it. Done with large prim linksets.
 Linkset child rotations.
@@ -43,6 +42,8 @@ One sided meshes? Should terrain be built into a closed shape?
 
 VEHICLES TODO LIST:
 =================================================
+UBit improvements to remove rubber-banding of avatars sitting on vehicle child prims:
+	https://github.com/UbitUmarov/Ubit-opensim
 Border crossing with linked vehicle causes crash
 	20121129.1411: editting/moving phys object across region boundries causes crash
 	    getPos-> btRigidBody::upcast -> getBodyType -> BOOM
@@ -168,6 +169,7 @@ Eliminate collisions between objects in a linkset. (LinksetConstraint)
 
 MORE
 ======================================================
+Compute avatar size and scale correctly. Now it is a bit off from the capsule size.
 Create tests for different interface components
 	Have test objects/scripts measure themselves and turn color if correct/bad
 	Test functions in SL and calibrate correctness there
@@ -344,3 +346,5 @@ Angular motion around Z moves the vehicle in world Z and not vehicle Z in ODE.
 	Verify that angular motion specified around Z moves in the vehicle coordinates.
 	DONE 20130120: BulletSim properly applies force in vehicle relative coordinates.
 Nebadon vehicles turning funny in arena (DONE)
+Lock axis (DONE 20130401)
+

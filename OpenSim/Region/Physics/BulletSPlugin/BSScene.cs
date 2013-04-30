@@ -316,6 +316,7 @@ public sealed class BSScene : PhysicsScene, IPhysicsParameters
                 break;
             case "bulletxna":
                 ret = new BSAPIXNA(engineName, this);
+                BSParam.ShouldUseBulletHACD = false;
                 break;
         }
 
@@ -463,7 +464,7 @@ public sealed class BSScene : PhysicsScene, IPhysicsParameters
 
         if (!m_initialized) return null;
 
-        DetailLog("{0},BSScene.AddPrimShape,call", localID);
+        // DetailLog("{0},BSScene.AddPrimShape,call", localID);
 
         BSPhysObject prim = new BSPrimLinkable(localID, primName, this, position, size, rotation, pbs, isPhysical);
         lock (PhysObjects) PhysObjects.Add(localID, prim);

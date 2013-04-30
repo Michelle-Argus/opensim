@@ -1635,6 +1635,7 @@
       <Reference name="System.Xml"/>
       <Reference name="System.Drawing"/>
       <Reference name="System.Web"/>
+      <Reference name="Ionic.Zip" path="../../../bin/"/>
       <Reference name="NDesk.Options" path="../../../bin/"/>
       <Reference name="OpenMetaverseTypes" path="../../../bin/"/>
       <Reference name="OpenMetaverse.StructuredData" path="../../../bin/"/>
@@ -2183,6 +2184,7 @@
 
       <ReferencePath>../../../../../../bin/</ReferencePath>
       <Reference name="System"/>
+      <Reference name="System.Core"/>
       <Reference name="System.Data"/>
       <Reference name="System.Web"/>
       <Reference name="System.Xml"/>
@@ -3053,6 +3055,7 @@
         <Match path="Avatar/AvatarFactory/Tests" pattern="*.cs" recurse="true"/>
         <Match path="Avatar/Friends/Tests" pattern="*.cs" recurse="true"/>
         <Match path="Avatar/Inventory/Archiver/Tests" pattern="*.cs" recurse="true"/>
+        <Match path="Avatar/Inventory/Transfer/Tests" pattern="*.cs" recurse="true"/>
         <Match path="Framework/InventoryAccess/Tests" pattern="*.cs" recurse="true"/>
         <Match path="Scripting/VectorRender/Tests" pattern="*.cs" recurse="true"/>
         <Match path="World/Archiver/Tests" pattern="*.cs" recurse="true"/>
