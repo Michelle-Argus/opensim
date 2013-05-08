@@ -25,34 +25,22 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+using System;
+using System.Text;
 using OpenMetaverse;
 
-namespace OpenSim.Region.Framework.Interfaces
+namespace OpenSim.Framework
 {
-    public delegate void ChangeDelegate(UUID regionID);
-    public delegate void MessageDelegate(UUID regionID, UUID fromID, string fromName, string message);
-
-    public interface IEstateModule
+    public class CachedTextureRequestArg
     {
-        event ChangeDelegate OnRegionInfoChange;
-        event ChangeDelegate OnEstateInfoChange;
-        event MessageDelegate OnEstateMessage;
+        public int BakedTextureIndex;
+        public UUID WearableHashID;
+    }
 
-        uint GetRegionFlags();
-        bool IsManager(UUID avatarID);
-
-        /// <summary>
-        /// Tell all clients about the current state of the region (terrain textures, water height, etc.).
-        /// </summary>
-        void sendRegionHandshakeToAll();
-        void TriggerEstateInfoChange();
-
-        /// <summary>
-        /// Fires the OnRegionInfoChange event.
-        /// </summary>
-        void TriggerRegionInfoChange();
-
-        void setEstateTerrainBaseTexture(int level, UUID texture);
-        void setEstateTerrainTextureHeights(int corner, float lowValue, float highValue);
+    public class CachedTextureResponseArg
+    {
+        public int BakedTextureIndex;
+        public UUID BakedTextureID;
+        public String HostName;
     }
 }
