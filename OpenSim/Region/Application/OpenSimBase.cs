@@ -557,7 +557,10 @@ namespace OpenSim
                 SceneManager.TrySetCurrentScene("..");
             }
 
-            scene.DeleteAllSceneObjects();
+            if (cleanup)
+            {
+                scene.DeleteAllSceneObjects();
+			}
             SceneManager.CloseScene(scene);
             ShutdownClientServer(scene.RegionInfo);
             
