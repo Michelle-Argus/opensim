@@ -3090,7 +3090,6 @@ namespace OpenSim.Region.Framework.Scenes
         {
             //client.OnNameFromUUIDRequest += HandleUUIDNameRequest;
             client.OnMoneyTransferRequest += ProcessMoneyTransferRequest;
-            client.OnSetStartLocationRequest += SetHomeRezPoint;
             client.OnRegionHandleRequest += RegionHandleRequest;
         }
         
@@ -3215,7 +3214,6 @@ namespace OpenSim.Region.Framework.Scenes
         {
             //client.OnNameFromUUIDRequest -= HandleUUIDNameRequest;
             client.OnMoneyTransferRequest -= ProcessMoneyTransferRequest;
-            client.OnSetStartLocationRequest -= SetHomeRezPoint;
             client.OnRegionHandleRequest -= RegionHandleRequest;
         }
 
@@ -3342,23 +3340,6 @@ namespace OpenSim.Region.Framework.Scenes
         }
 
         /// <summary>
-        /// Sets the Home Point.   The LoginService uses this to know where to put a user when they log-in
-        /// </summary>
-        /// <param name="remoteClient"></param>
-        /// <param name="regionHandle"></param>
-        /// <param name="position"></param>
-        /// <param name="lookAt"></param>
-        /// <param name="flags"></param>
-        public virtual void SetHomeRezPoint(IClientAPI remoteClient, ulong regionHandle, Vector3 position, Vector3 lookAt, uint flags)
-        {
-            if (GridUserService != null && GridUserService.SetHome(remoteClient.AgentId.ToString(), RegionInfo.RegionID, position, lookAt))
-                // FUBAR ALERT: this needs to be "Home position set." so the viewer saves a home-screenshot.
-                m_dialogModule.SendAlertToUser(remoteClient, "Home position set.");
-            else
-                m_dialogModule.SendAlertToUser(remoteClient, "Set Home request Failed.");
-        }
-
-        /// <summary>
         /// Get the avatar apperance for the given client.
         /// </summary>
         /// <param name="client"></param>
@@ -3454,15 +3435,12 @@ namespace OpenSim.Region.Framework.Scenes
                     if (closeChildAgents && CapsModule != null)
                         CapsModule.RemoveCaps(agentID);
     
-//                    // REFACTORING PROBLEM -- well not really a problem, but just to point out that whatever
-//                    // this method is doing is HORRIBLE!!!
-                    // Commented pending deletion since this method no longer appears to do anything at all
-//                    avatar.Scene.NeedSceneCacheClear(avatar.UUID);
-    
                     if (closeChildAgents && !isChildAgent)
                     {
                         List<ulong> regions = avatar.KnownRegionHandles;
                         regions.Remove(RegionInfo.RegionHandle);
+
+                        // This ends up being done asynchronously so that a logout isn't held up where there are many present but unresponsive neighbours.
                         m_sceneGridService.SendCloseChildAgentConnections(agentID, regions);
                     }
     
