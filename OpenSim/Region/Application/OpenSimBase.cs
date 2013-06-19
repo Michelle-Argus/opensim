@@ -231,10 +231,7 @@ namespace OpenSim
             }
 
             if (m_console != null)
-            {
-                StatsManager.RegisterConsoleCommands(m_console);
                 AddPluginCommands(m_console);
-            }
         }
 
         protected virtual void AddPluginCommands(ICommandConsole console)
@@ -883,7 +880,7 @@ namespace OpenSim
         /// <summary>
         /// Performs any last-minute sanity checking and shuts down the region server
         /// </summary>
-        public override void ShutdownSpecific()
+        protected override void ShutdownSpecific()
         {
             if (proxyUrl.Length > 0)
             {
@@ -903,6 +900,8 @@ namespace OpenSim
             {
                 m_log.Error("[SHUTDOWN]: Ignoring failure during shutdown - ", e);
             }
+
+            base.ShutdownSpecific();
         }
 
         /// <summary>

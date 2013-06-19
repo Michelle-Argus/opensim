@@ -455,6 +455,9 @@ namespace OpenSim.Region.Framework.Scenes
                             || Scene.TestBorderCross(val, Cardinals.S))
                         && !IsAttachmentCheckFull() && (!Scene.LoadingPrims))
                     {
+                        if (m_rootPart.KeyframeMotion != null)
+                            m_rootPart.KeyframeMotion.StartCrossingCheck();
+
                         m_scene.CrossPrimGroupIntoNewRegion(val, this, true);
                     }
                 }
@@ -578,6 +581,8 @@ namespace OpenSim.Region.Framework.Scenes
                             childPa.Selected = value;
                     }
                 }
+                if (RootPart.KeyframeMotion != null)
+                    RootPart.KeyframeMotion.Selected = value;
             }
         }
 
@@ -758,6 +763,11 @@ namespace OpenSim.Region.Framework.Scenes
             for (int i = 0; i < parts.Length; i++)
             {
                 SceneObjectPart part = parts[i];
+                if (part.KeyframeMotion != null)
+                {
+                    part.KeyframeMotion.UpdateSceneObject(this);
+                }
+
                 if (Object.ReferenceEquals(part, m_rootPart))
                     continue;
 
@@ -1499,7 +1509,7 @@ namespace OpenSim.Region.Framework.Scenes
             if (!userExposed)
                 dupe.IsAttachment = true;
 
-            dupe.AbsolutePosition = new Vector3(AbsolutePosition.X, AbsolutePosition.Y, AbsolutePosition.Z);
+            dupe.m_sittingAvatars = new List<UUID>();
 
             if (!userExposed)
             {
@@ -1551,6 +1561,8 @@ namespace OpenSim.Region.Framework.Scenes
     
                     newPart.DoPhysicsPropertyUpdate(originalPartPa.IsPhysical, true);
                 }
+                if (part.KeyframeMotion != null)
+                    newPart.KeyframeMotion = part.KeyframeMotion.Copy(dupe);
             }
             
             if (userExposed)
@@ -1578,6 +1590,12 @@ namespace OpenSim.Region.Framework.Scenes
 
         public void ScriptSetPhysicsStatus(bool usePhysics)
         {
+            if (usePhysics)
+            {
+                if (RootPart.KeyframeMotion != null)
+                    RootPart.KeyframeMotion.Stop();
+                RootPart.KeyframeMotion = null;
+            }
             UpdatePrimFlags(RootPart.LocalId, usePhysics, IsTemporary, IsPhantom, IsVolumeDetect);
         }
 

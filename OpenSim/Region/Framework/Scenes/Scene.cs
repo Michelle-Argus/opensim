@@ -1517,6 +1517,8 @@ namespace OpenSim.Region.Framework.Scenes
 
                 try
                 {
+                    EventManager.TriggerRegionHeartbeatStart(this);
+
                     // Apply taints in terrain module to terrain in physics scene
                     if (Frame % m_update_terrain == 0)
                     {
@@ -2362,6 +2364,12 @@ namespace OpenSim.Region.Framework.Scenes
 
             foreach (SceneObjectPart part in partList)
             {
+                if (part.KeyframeMotion != null)
+                {
+                    part.KeyframeMotion.Delete();
+                    part.KeyframeMotion = null;
+                }
+
                 if (part.IsJoint() && ((part.Flags & PrimFlags.Physics) != 0))
                 {
                     PhysicsScene.RequestJointDeletion(part.Name); // FIXME: what if the name changed?
@@ -2703,6 +2711,9 @@ namespace OpenSim.Region.Framework.Scenes
                 // before we restart the scripts, or else some functions won't work.
                 newObject.RootPart.ParentGroup.CreateScriptInstances(0, false, DefaultScriptEngine, GetStateSource(newObject));
                 newObject.ResumeScripts();
+
+                if (newObject.RootPart.KeyframeMotion != null)
+                    newObject.RootPart.KeyframeMotion.UpdateSceneObject(newObject);
             }
 
             // Do this as late as possible so that listeners have full access to the incoming object
@@ -2847,7 +2858,9 @@ namespace OpenSim.Region.Framework.Scenes
                 // client is for a root or child agent.
                 client.SceneAgent = sp;
 
-                // Cache the user's name
+                // This is currently also being done earlier in NewUserConnection for real users to see if this 
+                // resolves problems where HG agents are occasionally seen by others as "Unknown user" in chat and other
+                // places.  However, we still need to do it here for NPCs.
                 CacheUserName(sp, aCircuit);
     
                 EventManager.TriggerOnNewClient(client);
@@ -2871,7 +2884,7 @@ namespace OpenSim.Region.Framework.Scenes
             {
                 string first = aCircuit.firstname, last = aCircuit.lastname;
 
-                if (sp.PresenceType == PresenceType.Npc)
+                if (sp != null && sp.PresenceType == PresenceType.Npc)
                 {
                     UserManagementModule.AddUser(aCircuit.AgentID, first, last);
                 }
@@ -3766,8 +3779,12 @@ namespace OpenSim.Region.Framework.Scenes
                             CapsModule.SetAgentCapsSeeds(agent);
                     }
                 }
-            }
 
+                // Try caching an incoming user name much earlier on to see if this helps with an issue
+                // where HG users are occasionally seen by others as "Unknown User" because their UUIDName
+                // request for the HG avatar appears to trigger before the user name is cached.
+                CacheUserName(null, agent);
+            }
 
             if (vialogin)
             {

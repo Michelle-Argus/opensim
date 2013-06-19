@@ -511,7 +511,10 @@ public class BSPrim : BSPhysObject
 
             PhysScene.TaintedObject("setVehicleType", delegate()
             {
-                ZeroMotion(true /* inTaintTime */);
+                // Some vehicle scripts change vehicle type on the fly as an easy way to
+                //    change all the parameters. Like a plane changing to CAR when on the
+                //    ground. In this case, don't want to zero motion.
+                // ZeroMotion(true /* inTaintTime */);
                 VehicleActor.ProcessTypeChange(type);
                 ActivateIfPhysical(false);
             });
@@ -1510,7 +1513,8 @@ public class BSPrim : BSPhysObject
         CurrentEntityProperties = entprop;
 
         // Note that BSPrim can be overloaded by BSPrimLinkable which controls updates from root and children prims.
-        base.RequestPhysicsterseUpdate();
+        
+        PhysScene.PostUpdate(this);
     }
 }
 }
