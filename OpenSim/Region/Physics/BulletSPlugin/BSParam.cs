@@ -134,6 +134,7 @@ public static class BSParam
     public static float AvatarHeightMidFudge { get; private set; }
     public static float AvatarHeightHighFudge { get; private set; }
 	public static float AvatarContactProcessingThreshold { get; private set; }
+	public static int AvatarJumpFrames { get; private set; }
 	public static float AvatarBelowGroundUpCorrectionMeters { get; private set; }
 	public static float AvatarStepHeight { get; private set; }
 	public static float AvatarStepApproachFactor { get; private set; }
@@ -154,7 +155,12 @@ public static class BSParam
     public static Vector3 VehicleInertiaFactor { get; private set; }
     public static float VehicleGroundGravityFudge { get; private set; }
     public static float VehicleAngularBankingTimescaleFudge { get; private set; }
-    public static bool VehicleDebuggingEnable { get; private set; }
+    public static bool VehicleEnableLinearDeflection { get; private set; }
+    public static bool VehicleLinearDeflectionNotCollidingNoZ { get; private set; }
+    public static bool VehicleEnableAngularVerticalAttraction { get; private set; }
+    public static int VehicleAngularVerticalAttractionAlgorithm { get; private set; }
+    public static bool VehicleEnableAngularDeflection { get; private set; }
+    public static bool VehicleEnableAngularBanking { get; private set; }
 
     // Convex Hulls
     public static int CSHullMaxDepthSplit { get; private set; }
@@ -175,6 +181,7 @@ public static class BSParam
 
     // Linkset implementation parameters
     public static float LinksetImplementation { get; private set; }
+    public static bool LinksetOffsetCenterOfMass { get; private set; }
     public static bool LinkConstraintUseFrameOffset { get; private set; }
     public static bool LinkConstraintEnableTransMotor { get; private set; }
     public static float LinkConstraintTransMotorMaxVel { get; private set; }
@@ -567,6 +574,8 @@ public static class BSParam
             0.1f ),
 	    new ParameterDefn<float>("AvatarBelowGroundUpCorrectionMeters", "Meters to move avatar up if it seems to be below ground",
             1.0f ),
+	    new ParameterDefn<int>("AvatarJumpFrames", "Number of frames to allow jump forces. Changes jump height.",
+            4 ),
 	    new ParameterDefn<float>("AvatarStepHeight", "Height of a step obstacle to consider step correction",
             0.6f ) ,
 	    new ParameterDefn<float>("AvatarStepApproachFactor", "Factor to control angle of approach to step (0=straight on)",
@@ -602,8 +611,18 @@ public static class BSParam
             0.2f ),
         new ParameterDefn<float>("VehicleAngularBankingTimescaleFudge", "Factor to multiple angular banking timescale. Tune to increase realism.",
             60.0f ),
-        new ParameterDefn<bool>("VehicleDebuggingEnable", "Turn on/off vehicle debugging",
-            false ),
+        new ParameterDefn<bool>("VehicleEnableLinearDeflection", "Turn on/off vehicle linear deflection effect",
+            true ),
+        new ParameterDefn<bool>("VehicleLinearDeflectionNotCollidingNoZ", "Turn on/off linear deflection Z effect on non-colliding vehicles",
+            true ),
+        new ParameterDefn<bool>("VehicleEnableAngularVerticalAttraction", "Turn on/off vehicle angular vertical attraction effect",
+            true ),
+        new ParameterDefn<int>("VehicleAngularVerticalAttractionAlgorithm", "Select vertical attraction algo. You need to look at the source.",
+            0 ),
+        new ParameterDefn<bool>("VehicleEnableAngularDeflection", "Turn on/off vehicle angular deflection effect",
+            true ),
+        new ParameterDefn<bool>("VehicleEnableAngularBanking", "Turn on/off vehicle angular banking effect",
+            true ),
 
 	    new ParameterDefn<float>("MaxPersistantManifoldPoolSize", "Number of manifolds pooled (0 means default of 4096)",
             0f,
@@ -681,6 +700,8 @@ public static class BSParam
 
 	    new ParameterDefn<float>("LinksetImplementation", "Type of linkset implementation (0=Constraint, 1=Compound, 2=Manual)",
             (float)BSLinkset.LinksetImplementation.Compound ),
+	    new ParameterDefn<bool>("LinksetOffsetCenterOfMass", "If 'true', compute linkset center-of-mass and offset linkset position to account for same",
+            false ),
 	    new ParameterDefn<bool>("LinkConstraintUseFrameOffset", "For linksets built with constraints, enable frame offsetFor linksets built with constraints, enable frame offset.",
             false ),
 	    new ParameterDefn<bool>("LinkConstraintEnableTransMotor", "Whether to enable translational motor on linkset constraints",
@@ -703,7 +724,7 @@ public static class BSParam
         new ParameterDefn<float>("ResetBroadphasePool", "Setting this is any value resets the broadphase collision pool",
             0f,
             (s) => { return 0f; },
-            (s,v) => { BSParam.ResetBroadphasePoolTainted(s, v); } ),
+            (s,v) => { BSParam.ResetBroadphasePoolTainted(s, v, false /* inTaintTime */); } ),
         new ParameterDefn<float>("ResetConstraintSolver", "Setting this is any value resets the constraint solver",
             0f,
             (s) => { return 0f; },
@@ -789,10 +810,10 @@ public static class BSParam
     // =====================================================================
     // There are parameters that, when set, cause things to happen in the physics engine.
     // This causes the broadphase collision cache to be cleared.
-    private static void ResetBroadphasePoolTainted(BSScene pPhysScene, float v)
+    private static void ResetBroadphasePoolTainted(BSScene pPhysScene, float v, bool inTaintTime)
     {
         BSScene physScene = pPhysScene;
-        physScene.TaintedObject("BSParam.ResetBroadphasePoolTainted", delegate()
+        physScene.TaintedObject(inTaintTime, "BSParam.ResetBroadphasePoolTainted", delegate()
         {
             physScene.PE.ResetBroadphasePool(physScene.World);
         });

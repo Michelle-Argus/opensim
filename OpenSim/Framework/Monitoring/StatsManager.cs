@@ -27,7 +27,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
+
+using OpenMetaverse.StructuredData;
 
 namespace OpenSim.Framework.Monitoring
 {
@@ -68,12 +71,14 @@ namespace OpenSim.Framework.Monitoring
                 "General",
                 false,
                 "show stats",
-                "show stats [list|all|<category>]",
+                "show stats [list|all|(<category>[.<container>])+",
                 "Show statistical information for this server",
                 "If no final argument is specified then legacy statistics information is currently shown.\n"
-                    + "If list is specified then statistic categories are shown.\n"
-                    + "If all is specified then all registered statistics are shown.\n"
-                    + "If a category name is specified then only statistics from that category are shown.\n"
+                    + "'list' argument will show statistic categories.\n"
+                    + "'all' will show all statistics.\n"
+                    + "A <category> name will show statistics from that category.\n"
+                    + "A <category>.<container> name will show statistics from that category in that container.\n"
+                    + "More than one name can be given separated by spaces.\n"
                     + "THIS STATS FACILITY IS EXPERIMENTAL AND DOES NOT YET CONTAIN ALL STATS",
                 HandleShowStatsCommand);
         }
@@ -84,40 +89,47 @@ namespace OpenSim.Framework.Monitoring
 
             if (cmd.Length > 2)
             {
-                var categoryName = cmd[2];
-                var containerName = cmd.Length > 3 ? cmd[3] : String.Empty;
+                foreach (string name in cmd.Skip(2))
+                {
+                    string[] components = name.Split('.');
 
-                if (categoryName == AllSubCommand)
-                {
-                    OutputAllStatsToConsole(con);
-                }
-                else if (categoryName == ListSubCommand)
-                {
-                    con.Output("Statistic categories available are:");
-                    foreach (string category in RegisteredStats.Keys)
-                        con.OutputFormat("  {0}", category);
-                }
-                else
-                {
-                    SortedDictionary<string, SortedDictionary<string, Stat>> category;
-                    if (!RegisteredStats.TryGetValue(categoryName, out category))
+                    string categoryName = components[0];
+                    string containerName = components.Length > 1 ? components[1] : null;
+
+                    if (categoryName == AllSubCommand)
                     {
-                        con.OutputFormat("No such category as {0}", categoryName);
+                        OutputAllStatsToConsole(con);
+                    }
+                    else if (categoryName == ListSubCommand)
+                    {
+                        con.Output("Statistic categories available are:");
+                        foreach (string category in RegisteredStats.Keys)
+                            con.OutputFormat("  {0}", category);
                     }
                     else
                     {
-                        if (String.IsNullOrEmpty(containerName))
-                            OutputCategoryStatsToConsole(con, category);
+                        SortedDictionary<string, SortedDictionary<string, Stat>> category;
+                        if (!RegisteredStats.TryGetValue(categoryName, out category))
+                        {
+                            con.OutputFormat("No such category as {0}", categoryName);
+                        }
                         else
                         {
-                            SortedDictionary<string, Stat> container;
-                            if (category.TryGetValue(containerName, out container))
+                            if (String.IsNullOrEmpty(containerName))
                             {
-                                OutputContainerStatsToConsole(con, container);
+                                OutputCategoryStatsToConsole(con, category);
                             }
                             else
                             {
-                                con.OutputFormat("No such container {0} in category {1}", containerName, categoryName);
+                                SortedDictionary<string, Stat> container;
+                                if (category.TryGetValue(containerName, out container))
+                                {
+                                    OutputContainerStatsToConsole(con, container);
+                                }
+                                else
+                                {
+                                    con.OutputFormat("No such container {0} in category {1}", containerName, categoryName);
+                                }
                             }
                         }
                     }
@@ -156,6 +168,70 @@ namespace OpenSim.Framework.Monitoring
             {
                 con.Output(stat.ToConsoleString());
             }
+        }
+
+        // Creates an OSDMap of the format:
+        // { categoryName: {
+        //         containerName: {
+        //               statName: {
+        //                     "Name": name,
+        //                     "ShortName": shortName,
+        //                     ...
+        //               },
+        //               statName: {
+        //                     "Name": name,
+        //                     "ShortName": shortName,
+        //                     ...
+        //               },
+        //               ...
+        //         },
+        //         containerName: {
+        //         ...
+        //         },
+        //         ...
+        //   },
+        //   categoryName: {
+        //   ...
+        //   },
+        //   ...
+        // }
+        // The passed in parameters will filter the categories, containers and stats returned. If any of the
+        //    parameters are either EmptyOrNull or the AllSubCommand value, all of that type will be returned.
+        // Case matters.
+        public static OSDMap GetStatsAsOSDMap(string pCategoryName, string pContainerName, string pStatName)
+        {
+            OSDMap map = new OSDMap();
+
+            foreach (string catName in RegisteredStats.Keys)
+            {
+                // Do this category if null spec, "all" subcommand or category name matches passed parameter.
+                // Skip category if none of the above.
+                if (!(String.IsNullOrEmpty(pCategoryName) || pCategoryName == AllSubCommand || pCategoryName == catName))
+                    continue;
+
+                OSDMap contMap = new OSDMap();
+                foreach (string contName in RegisteredStats[catName].Keys)
+                {
+                    if (!(string.IsNullOrEmpty(pContainerName) || pContainerName == AllSubCommand || pContainerName == contName))
+                        continue;
+                    
+                    OSDMap statMap = new OSDMap();
+
+                    SortedDictionary<string, Stat> theStats = RegisteredStats[catName][contName];
+                    foreach (string statName in theStats.Keys)
+                    {
+                        if (!(String.IsNullOrEmpty(pStatName) || pStatName == AllSubCommand || pStatName == statName))
+                            continue;
+
+                        statMap.Add(statName, theStats[statName].ToOSDMap());
+                    }
+
+                    contMap.Add(contName, statMap);
+                }
+                map.Add(catName, contMap);
+            }
+
+            return map;
         }
 
 //        /// <summary>

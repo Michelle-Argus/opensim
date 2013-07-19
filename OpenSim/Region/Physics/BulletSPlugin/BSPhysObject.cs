@@ -90,6 +90,8 @@ public abstract class BSPhysObject : PhysicsActor
         PhysBody = new BulletBody(localID);
         PhysShape = new BSShapeNull();
 
+        UserSetCenterOfMassDisplacement = null;
+
         PrimAssetState = PrimAssetCondition.Unknown;
 
         // Default material type. Also sets Friction, Restitution and Density.
@@ -101,9 +103,10 @@ public abstract class BSPhysObject : PhysicsActor
         CollisionsLastTickStep = -1;
 
         SubscribedEventsMs = 0;
-        CollidingStep = 0;
-        CollidingGroundStep = 0;
-        CollisionAccumulation = 0;
+        // Crazy values that will never be true
+        CollidingStep = BSScene.NotASimulationStep;
+        CollidingGroundStep = BSScene.NotASimulationStep;
+        CollisionAccumulation = BSScene.NotASimulationStep;
         ColliderIsMoving = false;
         CollisionScore = 0;
 
@@ -180,6 +183,7 @@ public abstract class BSPhysObject : PhysicsActor
         Material = (MaterialAttributes.Material)material;
 
         // Setting the material sets the material attributes also.
+        // TODO: decide if this is necessary -- the simulator does this.
         MaterialAttributes matAttrib = BSMaterials.GetAttributes(Material, false);
         Friction = matAttrib.friction;
         Restitution = matAttrib.restitution;
@@ -194,10 +198,10 @@ public abstract class BSPhysObject : PhysicsActor
     // Update the physical location and motion of the object. Called with data from Bullet.
     public abstract void UpdateProperties(EntityProperties entprop);
 
-    public abstract OMV.Vector3 RawPosition { get; set; }
+    public virtual OMV.Vector3 RawPosition { get; set; }
     public abstract OMV.Vector3 ForcePosition { get; set; }
 
-    public abstract OMV.Quaternion RawOrientation { get; set; }
+    public virtual OMV.Quaternion RawOrientation { get; set; }
     public abstract OMV.Quaternion ForceOrientation { get; set; }
 
     public OMV.Vector3 RawVelocity { get; set; }
@@ -210,6 +214,7 @@ public abstract class BSPhysObject : PhysicsActor
         AddAngularForce(force, pushforce, false);
     }
     public abstract void AddAngularForce(OMV.Vector3 force, bool pushforce, bool inTaintTime);
+    public abstract void AddForce(OMV.Vector3 force, bool pushforce, bool inTaintTime);
 
     public abstract OMV.Vector3 ForceRotationalVelocity { get; set; }
 
@@ -345,7 +350,7 @@ public abstract class BSPhysObject : PhysicsActor
             if (value)
                 CollidingStep = PhysScene.SimulationStep;
             else
-                CollidingStep = 0;
+                CollidingStep = BSScene.NotASimulationStep;
             }
     }
     public override bool CollidingGround {
@@ -355,7 +360,7 @@ public abstract class BSPhysObject : PhysicsActor
             if (value)
                 CollidingGroundStep = PhysScene.SimulationStep;
             else
-                CollidingGroundStep = 0;
+                CollidingGroundStep = BSScene.NotASimulationStep;
         }
     }
     public override bool CollidingObj {
@@ -364,7 +369,7 @@ public abstract class BSPhysObject : PhysicsActor
             if (value)
                 CollidingObjectStep = PhysScene.SimulationStep;
             else
-                CollidingObjectStep = 0;
+                CollidingObjectStep = BSScene.NotASimulationStep;
         }
     }
 

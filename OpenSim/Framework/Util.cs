@@ -141,6 +141,11 @@ namespace OpenSim.Framework
         public static FireAndForgetMethod DefaultFireAndForgetMethod = FireAndForgetMethod.SmartThreadPool;
         public static FireAndForgetMethod FireAndForgetMethod = DefaultFireAndForgetMethod;
 
+        public static bool IsPlatformMono
+        {
+            get { return Type.GetType("Mono.Runtime") != null; }
+        }
+
         /// <summary>
         /// Gets the name of the directory where the current running executable
         /// is located
@@ -1326,7 +1331,7 @@ namespace OpenSim.Framework
                     ru = "OSX/Mono";
                 else
                 {
-                    if (Type.GetType("Mono.Runtime") != null)
+                    if (IsPlatformMono)
                         ru = "Win/Mono";
                     else
                         ru = "Win/.NET";
@@ -1774,10 +1779,12 @@ namespace OpenSim.Framework
             FireAndForget(callback, null);
         }
 
-        public static void InitThreadPool(int maxThreads)
+        public static void InitThreadPool(int minThreads, int maxThreads)
         {
             if (maxThreads < 2)
                 throw new ArgumentOutOfRangeException("maxThreads", "maxThreads must be greater than 2");
+            if (minThreads > maxThreads || minThreads < 2)
+                throw new ArgumentOutOfRangeException("minThreads", "minThreads must be greater than 2 and less than or equal to maxThreads");
             if (m_ThreadPool != null)
                 throw new InvalidOperationException("SmartThreadPool is already initialized");
 
@@ -1785,7 +1792,7 @@ namespace OpenSim.Framework
             startInfo.ThreadPoolName = "Util";
             startInfo.IdleTimeout = 2000;
             startInfo.MaxWorkerThreads = maxThreads;
-            startInfo.MinWorkerThreads = 2;
+            startInfo.MinWorkerThreads = minThreads;
 
             m_ThreadPool = new SmartThreadPool(startInfo);
         }
@@ -1860,7 +1867,7 @@ namespace OpenSim.Framework
                     break;
                 case FireAndForgetMethod.SmartThreadPool:
                     if (m_ThreadPool == null)
-                        InitThreadPool(15); 
+                        InitThreadPool(2, 15); 
                     m_ThreadPool.QueueWorkItem((cb, o) => cb(o), realCallback, obj);
                     break;
                 case FireAndForgetMethod.Thread:
@@ -2248,7 +2255,7 @@ namespace OpenSim.Framework
         {
             lock (m_syncRoot)
             {
-                m_lowQueue.Enqueue(data);
+                q.Enqueue(data);
                 m_s.WaitOne(0);
                 m_s.Release();
             }
@@ -2288,7 +2295,7 @@ namespace OpenSim.Framework
             {
                 if (m_highQueue.Count > 0)
                     res = m_highQueue.Dequeue();
-                else
+                else if (m_lowQueue.Count > 0)
                     res = m_lowQueue.Dequeue();
 
                 if (m_highQueue.Count == 0 && m_lowQueue.Count == 0)

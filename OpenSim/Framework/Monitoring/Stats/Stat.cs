@@ -27,6 +27,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using log4net;
@@ -40,6 +41,8 @@ namespace OpenSim.Framework.Monitoring
     public class Stat : IDisposable
     {
 //        private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+
+        public static readonly char[] DisallowedShortNameCharacters = { '.' };
 
         /// <summary>
         /// Category of this stat (e.g. cache, scene, etc).
@@ -165,6 +168,12 @@ namespace OpenSim.Framework.Monitoring
                 throw new Exception(
                     string.Format("Stat cannot be in category '{0}' since this is reserved for a subcommand", category));
 
+            foreach (char c in DisallowedShortNameCharacters)
+            {
+                if (shortName.IndexOf(c) != -1)
+                    throw new Exception(string.Format("Stat name {0} cannot contain character {1}", shortName, c));
+            }
+
             ShortName = shortName;
             Name = name;
             Description = description;
@@ -233,6 +242,7 @@ namespace OpenSim.Framework.Monitoring
             ret.Add("Description", OSD.FromString(Description));
             ret.Add("UnitName", OSD.FromString(UnitName));
             ret.Add("Value", OSD.FromReal(Value));
+            ret.Add("StatType", "Stat");    // used by overloading classes to denote type of stat
 
             return ret;
         }
@@ -247,6 +257,10 @@ namespace OpenSim.Framework.Monitoring
 
                 lock (m_samples)
                 {
+//                    m_log.DebugFormat(
+//                        "[STAT]: Samples for {0} are {1}", 
+//                        Name, string.Join(",", m_samples.Select(s => s.ToString()).ToArray()));
+
                     foreach (double s in m_samples)
                     {
                         if (lastSample != null)

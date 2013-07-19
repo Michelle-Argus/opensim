@@ -114,10 +114,15 @@ namespace OpenSim.Framework.Monitoring
 
         private void MakeStat(string pName, string pDesc, string pUnit, string pContainer, Action<Stat> act)
         {
+            MakeStat(pName, pDesc, pUnit, pContainer, act, MeasuresOfInterest.None);
+        }
+
+        private void MakeStat(string pName, string pDesc, string pUnit, string pContainer, Action<Stat> act, MeasuresOfInterest moi)
+        {
             string desc = pDesc;
             if (desc == null)
                 desc = pName;
-            Stat stat = new Stat(pName, pName, desc, pUnit, CategoryServer, pContainer, StatType.Pull, act, StatVerbosity.Debug);
+            Stat stat = new Stat(pName, pName, desc, pUnit, CategoryServer, pContainer, StatType.Pull, moi, act, StatVerbosity.Debug);
             StatsManager.RegisterStat(stat);
             RegisteredStats.Add(pName, stat);
         }
@@ -141,7 +146,7 @@ namespace OpenSim.Framework.Monitoring
                 StatsManager.RegisterStat(tempStat);
                 RegisteredStats.Add(tempName, tempStat);
 
-                MakeStat("TotalProcessorTime", null, "sec", ContainerProcessor, 
+                MakeStat("TotalProcessorTime", null, "sec", ContainerProcessor,
                                     (s) => { s.Value = Process.GetCurrentProcess().TotalProcessorTime.TotalSeconds; });
 
                 MakeStat("UserProcessorTime", null, "sec", ContainerProcessor,
@@ -158,7 +163,7 @@ namespace OpenSim.Framework.Monitoring
                 m_log.ErrorFormat("{0} Exception creating 'Process': {1}", LogHeader, e);
             }
 
-            MakeStat("BuiltinThreadpoolWorkerThreadsAvailable", null, "threads", ContainerThreadpool, 
+            MakeStat("BuiltinThreadpoolWorkerThreadsAvailable", null, "threads", ContainerThreadpool,
                 s => 
                 { 
                     int workerThreads, iocpThreads; 
@@ -166,7 +171,7 @@ namespace OpenSim.Framework.Monitoring
                     s.Value = workerThreads;
                 });
 
-            MakeStat("BuiltinThreadpoolIOCPThreadsAvailable", null, "threads", ContainerThreadpool, 
+            MakeStat("BuiltinThreadpoolIOCPThreadsAvailable", null, "threads", ContainerThreadpool,
                 s => 
                 { 
                     int workerThreads, iocpThreads; 
@@ -174,7 +179,7 @@ namespace OpenSim.Framework.Monitoring
                     s.Value = iocpThreads;
                 });
 
-            if (Util.FireAndForgetMethod != null && Util.GetSmartThreadPoolInfo() != null)
+            if (Util.FireAndForgetMethod == FireAndForgetMethod.SmartThreadPool && Util.GetSmartThreadPoolInfo() != null)
             {
                 MakeStat("STPMaxThreads", null, "threads", ContainerThreadpool, s => s.Value = Util.GetSmartThreadPoolInfo().MaxThreads);
                 MakeStat("STPMinThreads", null, "threads", ContainerThreadpool, s => s.Value = Util.GetSmartThreadPoolInfo().MinThreads);
@@ -183,6 +188,14 @@ namespace OpenSim.Framework.Monitoring
                 MakeStat("STPInUseThreads", null, "threads", ContainerThreadpool, s => s.Value = Util.GetSmartThreadPoolInfo().InUseThreads);
                 MakeStat("STPWorkItemsWaiting", null, "threads", ContainerThreadpool, s => s.Value = Util.GetSmartThreadPoolInfo().WaitingCallbacks);
             }
+
+            MakeStat(
+                "HTTPRequestsMade", 
+                "Number of outbound HTTP requests made", 
+                "requests", 
+                ContainerNetwork, 
+                s => s.Value = WebUtil.RequestNumber,
+                MeasuresOfInterest.AverageChangeOverTime);
 
             try
             {
@@ -226,13 +239,13 @@ namespace OpenSim.Framework.Monitoring
             }
 
             MakeStat("ProcessMemory", null, "MB", ContainerMemory,
-                                (s) => { s.Value = Process.GetCurrentProcess().WorkingSet64 / 1024d / 1024d; });
-            MakeStat("ObjectMemory", null, "MB", ContainerMemory,
-                                (s) => { s.Value = GC.GetTotalMemory(false) / 1024d / 1024d; });
-            MakeStat("LastMemoryChurn", null, "MB/sec", ContainerMemory,
-                                (s) => { s.Value = Math.Round(MemoryWatchdog.LastMemoryChurn * 1000d / 1024d / 1024d, 3); });
-            MakeStat("AverageMemoryChurn", null, "MB/sec", ContainerMemory,
-                                (s) => { s.Value = Math.Round(MemoryWatchdog.AverageMemoryChurn * 1000d / 1024d / 1024d, 3); });
+                                (s) => { s.Value = Math.Round(Process.GetCurrentProcess().WorkingSet64 / 1024d / 1024d, 3); });
+            MakeStat("HeapMemory", null, "MB", ContainerMemory,
+                                (s) => { s.Value = Math.Round(GC.GetTotalMemory(false) / 1024d / 1024d, 3); });
+            MakeStat("LastHeapAllocationRate", null, "MB/sec", ContainerMemory,
+                                (s) => { s.Value = Math.Round(MemoryWatchdog.LastHeapAllocationRate * 1000d / 1024d / 1024d, 3); });
+            MakeStat("AverageHeapAllocationRate", null, "MB/sec", ContainerMemory,
+                                (s) => { s.Value = Math.Round(MemoryWatchdog.AverageHeapAllocationRate * 1000d / 1024d / 1024d, 3); });
         }
 
         // Notes on performance counters: 
