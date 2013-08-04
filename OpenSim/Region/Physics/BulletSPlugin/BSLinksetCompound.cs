@@ -42,6 +42,7 @@ public sealed class BSLinksetCompound : BSLinkset
     public BSLinksetCompound(BSScene scene, BSPrimLinkable parent)
         : base(scene, parent)
     {
+        LinksetImpl = LinksetImplementation.Compound;
     }
 
     // ================================================================
@@ -61,17 +62,22 @@ public sealed class BSLinksetCompound : BSLinkset
         if (LinksetRoot.PhysBody.HasPhysicalBody)
             m_physicsScene.PE.SetGravity(LinksetRoot.PhysBody, gravity);
     }
-    public override void ComputeLocalInertia(OMV.Vector3 inertiaFactor)
+    public override void ComputeAndSetLocalInertia(OMV.Vector3 inertiaFactor, float linksetMass)
     {
-        OMV.Vector3 inertia = m_physicsScene.PE.CalculateLocalInertia(LinksetRoot.PhysShape.physShapeInfo, LinksetRoot.Mass);
+        OMV.Vector3 inertia = m_physicsScene.PE.CalculateLocalInertia(LinksetRoot.PhysShape.physShapeInfo, linksetMass);
         LinksetRoot.Inertia = inertia * inertiaFactor;
-        m_physicsScene.PE.SetMassProps(LinksetRoot.PhysBody, LinksetRoot.Mass, LinksetRoot.Inertia);
+        m_physicsScene.PE.SetMassProps(LinksetRoot.PhysBody, linksetMass, LinksetRoot.Inertia);
         m_physicsScene.PE.UpdateInertiaTensor(LinksetRoot.PhysBody);
     }
     public override void SetPhysicalCollisionFlags(CollisionFlags collFlags)
     {
         if (LinksetRoot.PhysBody.HasPhysicalBody)
             m_physicsScene.PE.SetCollisionFlags(LinksetRoot.PhysBody, collFlags);
+    }
+    public override void AddToPhysicalCollisionFlags(CollisionFlags collFlags)
+    {
+        if (LinksetRoot.PhysBody.HasPhysicalBody)
+            m_physicsScene.PE.AddToCollisionFlags(LinksetRoot.PhysBody, collFlags);
     }
     public override void RemoveFromPhysicalCollisionFlags(CollisionFlags collFlags)
     {
@@ -252,7 +258,7 @@ public sealed class BSLinksetCompound : BSLinkset
     {
         if (!HasChild(child))
         {
-            m_children.Add(child);
+            m_children.Add(child, new BSLinkInfo(child));
 
             DetailLog("{0},BSLinksetCompound.AddChildToLinkset,call,child={1}", LinksetRoot.LocalID, child.LocalID);
 
@@ -348,7 +354,7 @@ public sealed class BSLinksetCompound : BSLinkset
 
             // Add the shapes of all the components of the linkset
             int memberIndex = 1;
-            ForEachMember(delegate(BSPrimLinkable cPrim)
+            ForEachMember((cPrim) =>
             {
                 if (IsRoot(cPrim))
                 {

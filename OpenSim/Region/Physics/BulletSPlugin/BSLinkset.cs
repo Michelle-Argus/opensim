@@ -70,6 +70,17 @@ public abstract class BSLinkset
         return ret;
     }
 
+    public class BSLinkInfo
+    {
+        public BSPrimLinkable member;
+        public BSLinkInfo(BSPrimLinkable pMember)
+        {
+            member = pMember;
+        }
+    }
+
+    public LinksetImplementation LinksetImpl { get; protected set; }
+
     public BSPrimLinkable LinksetRoot { get; protected set; }
 
     protected BSScene m_physicsScene { get; private set; }
@@ -78,7 +89,8 @@ public abstract class BSLinkset
     public int LinksetID { get; private set; }
 
     // The children under the root in this linkset.
-    protected HashSet<BSPrimLinkable> m_children;
+    // protected HashSet<BSPrimLinkable> m_children;
+    protected Dictionary<BSPrimLinkable, BSLinkInfo> m_children;
 
     // We lock the diddling of linkset classes to prevent any badness.
     // This locks the modification of the instances of this class. Changes
@@ -109,7 +121,7 @@ public abstract class BSLinkset
             m_nextLinksetID = 1;
         m_physicsScene = scene;
         LinksetRoot = parent;
-        m_children = new HashSet<BSPrimLinkable>();
+        m_children = new Dictionary<BSPrimLinkable, BSLinkInfo>();
         LinksetMass = parent.RawMass;
         Rebuilding = false;
 
@@ -170,17 +182,7 @@ public abstract class BSLinkset
         bool ret = false;
         lock (m_linksetActivityLock)
         {
-            ret = m_children.Contains(child);
-            /* Safer version but the above should work
-            foreach (BSPrimLinkable bp in m_children)
-            {
-                if (child.LocalID == bp.LocalID)
-                {
-                    ret = true;
-                    break;
-                }
-            }
-             */
+            ret = m_children.ContainsKey(child);
         }
         return ret;
     }
@@ -194,7 +196,24 @@ public abstract class BSLinkset
         lock (m_linksetActivityLock)
         {
             action(LinksetRoot);
-            foreach (BSPrimLinkable po in m_children)
+            foreach (BSPrimLinkable po in m_children.Keys)
+            {
+                if (action(po))
+                    break;
+            }
+        }
+        return ret;
+    }
+
+    // Perform an action on each member of the linkset including root prim.
+    // Depends on the action on whether this should be done at taint time.
+    public delegate bool ForEachLinkInfoAction(BSLinkInfo obj);
+    public virtual bool ForEachLinkInfo(ForEachLinkInfoAction action)
+    {
+        bool ret = false;
+        lock (m_linksetActivityLock)
+        {
+            foreach (BSLinkInfo po in m_children.Values)
             {
                 if (action(po))
                     break;
@@ -309,16 +328,18 @@ public abstract class BSLinkset
             }
         );
     }
-    public virtual void ComputeLocalInertia(OMV.Vector3 inertiaFactor)
+    public virtual void ComputeAndSetLocalInertia(OMV.Vector3 inertiaFactor, float linksetMass)
     {
         ForEachMember((member) =>
             {
                 if (member.PhysBody.HasPhysicalBody)
                 {
-                    OMV.Vector3 inertia = m_physicsScene.PE.CalculateLocalInertia(member.PhysShape.physShapeInfo, member.Mass);
+                    OMV.Vector3 inertia = m_physicsScene.PE.CalculateLocalInertia(member.PhysShape.physShapeInfo, linksetMass);
                     member.Inertia = inertia * inertiaFactor;
-                    m_physicsScene.PE.SetMassProps(member.PhysBody, member.Mass, member.Inertia);
+                    m_physicsScene.PE.SetMassProps(member.PhysBody, linksetMass, member.Inertia);
                     m_physicsScene.PE.UpdateInertiaTensor(member.PhysBody);
+                    DetailLog("{0},BSLinkset.ComputeAndSetLocalInertia,m.mass={1}, inertia={2}", member.LocalID, linksetMass, member.Inertia);
+
                 }
                 return false;   // 'false' says to continue looping
             }
@@ -330,6 +351,16 @@ public abstract class BSLinkset
             {
                 if (member.PhysBody.HasPhysicalBody)
                     m_physicsScene.PE.SetCollisionFlags(member.PhysBody, collFlags);
+                return false;   // 'false' says to continue looping
+            }
+        );
+    }
+    public virtual void AddToPhysicalCollisionFlags(CollisionFlags collFlags)
+    {
+        ForEachMember((member) =>
+            {
+                if (member.PhysBody.HasPhysicalBody)
+                    m_physicsScene.PE.AddToCollisionFlags(member.PhysBody, collFlags);
                 return false;   // 'false' says to continue looping
             }
         );
@@ -352,7 +383,7 @@ public abstract class BSLinkset
         {
             lock (m_linksetActivityLock)
             {
-                foreach (BSPrimLinkable bp in m_children)
+                foreach (BSPrimLinkable bp in m_children.Keys)
                 {
                     mass += bp.RawMass;
                 }
@@ -370,7 +401,7 @@ public abstract class BSLinkset
             com = LinksetRoot.Position * LinksetRoot.RawMass;
             float totalMass = LinksetRoot.RawMass;
 
-            foreach (BSPrimLinkable bp in m_children)
+            foreach (BSPrimLinkable bp in m_children.Keys)
             {
                 com += bp.Position * bp.RawMass;
                 totalMass += bp.RawMass;
@@ -389,7 +420,7 @@ public abstract class BSLinkset
         {
             com = LinksetRoot.Position;
 
-            foreach (BSPrimLinkable bp in m_children)
+            foreach (BSPrimLinkable bp in m_children.Keys)
             {
                 com += bp.Position;
             }
