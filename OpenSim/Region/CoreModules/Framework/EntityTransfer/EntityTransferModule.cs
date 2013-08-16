@@ -317,7 +317,8 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
                     "[ENTITY TRANSFER MODULE]: Ignoring teleport request of {0} {1} to {2}@{3} - agent is already in transit.",
                     sp.Name, sp.UUID, position, regionHandle);
 
-                sp.ControllingClient.SendTeleportFailed("Slow down!");
+                sp.ControllingClient.SendTeleportFailed("Previous teleport process incomplete.  Please retry shortly.");
+
                 return;
             }
 
@@ -688,8 +689,7 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             if (version.Equals("SIMULATION/0.2"))
                 TransferAgent_V2(sp, agentCircuit, reg, finalDestination, endPoint, teleportFlags, oldRegionX, newRegionX, oldRegionY, newRegionY, version, out reason);
             else
-                TransferAgent_V1(sp, agentCircuit, reg, finalDestination, endPoint, teleportFlags, oldRegionX, newRegionX, oldRegionY, newRegionY, version, out reason);
-
+                TransferAgent_V1(sp, agentCircuit, reg, finalDestination, endPoint, teleportFlags, oldRegionX, newRegionX, oldRegionY, newRegionY, version, out reason);           
         }
 
         private void TransferAgent_V1(ScenePresence sp, AgentCircuitData agentCircuit, GridRegion reg, GridRegion finalDestination,
@@ -698,7 +698,10 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             ulong destinationHandle = finalDestination.RegionHandle;
             AgentCircuitData currentAgentCircuit = sp.Scene.AuthenticateHandler.GetAgentCircuitData(sp.ControllingClient.CircuitCode);
 
-            m_log.DebugFormat("[ENTITY TRANSFER MODULE]: Using TP V1");
+            m_log.DebugFormat(
+                "[ENTITY TRANSFER MODULE]: Using TP V1 for {0} going from {1} to {2}", 
+                sp.Name, Scene.Name, finalDestination.RegionName);
+
             // Let's create an agent there if one doesn't exist yet. 
             // NOTE: logout will always be false for a non-HG teleport.
             bool logout = false;
@@ -956,6 +959,27 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
                 return;
             }
 
+            if (m_entityTransferStateMachine.GetAgentTransferState(sp.UUID) == AgentTransferState.Cancelling)
+            {
+                m_interRegionTeleportCancels.Value++;
+
+                m_log.DebugFormat(
+                    "[ENTITY TRANSFER MODULE]: Cancelled teleport of {0} to {1} from {2} after CreateAgent on client request",
+                    sp.Name, finalDestination.RegionName, sp.Scene.Name);
+
+                return;
+            }
+            else if (m_entityTransferStateMachine.GetAgentTransferState(sp.UUID) == AgentTransferState.Aborting)
+            {
+                m_interRegionTeleportAborts.Value++;
+
+                m_log.DebugFormat(
+                    "[ENTITY TRANSFER MODULE]: Aborted teleport of {0} to {1} from {2} after CreateAgent due to previous client close.",
+                    sp.Name, finalDestination.RegionName, sp.Scene.Name);
+
+                return;
+            }
+
             // Past this point we have to attempt clean up if the teleport fails, so update transfer state.
             m_entityTransferStateMachine.UpdateInTransit(sp.UUID, AgentTransferState.Transferring);
 
@@ -1006,6 +1030,12 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             agent.SenderWantsToWaitForRoot = true;
             //SetCallbackURL(agent, sp.Scene.RegionInfo);
 
+            // Reset the do not close flag.  This must be done before the destination opens child connections (here
+            // triggered by UpdateAgent) to avoid race conditions.  However, we also want to reset it as late as possible
+            // to avoid a situation where an unexpectedly early call to Scene.NewUserConnection() wrongly results
+            // in no close.
+            sp.DoNotCloseAfterTeleport = false;
+
             // Send the Update. If this returns true, we know the client has contacted the destination
             // via CompleteMovementIntoRegion, so we can let go.
             // If it returns false, something went wrong, and we need to abort.
@@ -1032,6 +1062,14 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             
             m_entityTransferStateMachine.UpdateInTransit(sp.UUID, AgentTransferState.CleaningUp);
 
+            // Need to signal neighbours whether child agents may need closing irrespective of whether this
+            // one needed closing.  We also need to close child agents as quickly as possible to avoid complicated
+            // race conditions with rapid agent releporting (e.g. from A1 to a non-neighbour B, back
+            // to a neighbour A2 then off to a non-neighbour C).  Closing child agents any later requires complex
+            // distributed checks to avoid problems in rapid reteleporting scenarios and where child agents are
+            // abandoned without proper close by viewer but then re-used by an incoming connection.
+            sp.CloseChildAgents(newRegionX, newRegionY);
+
             // May need to logout or other cleanup
             AgentHasMovedAway(sp, logout);
 
@@ -1042,11 +1080,8 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             sp.MakeChildAgent();
 
             // Finally, let's close this previously-known-as-root agent, when the jump is outside the view zone
-
             if (NeedsClosing(sp.DrawDistance, oldRegionX, newRegionX, oldRegionY, newRegionY, reg))
             {
-                sp.DoNotCloseAfterTeleport = false;
-
                 // RED ALERT!!!!
                 // PLEASE DO NOT DECREASE THIS WAIT TIME UNDER ANY CIRCUMSTANCES.
                 // THE VIEWERS SEEM TO NEED SOME TIME AFTER RECEIVING MoveAgentIntoRegion
@@ -1055,23 +1090,18 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
                 // IN THE AVIE BEING PLACED IN INFINITY FOR A COUPLE OF SECONDS.
                 Thread.Sleep(15000);
             
-                if (!sp.DoNotCloseAfterTeleport)
-                {
-                    // OK, it got this agent. Let's close everything
-                    m_log.DebugFormat("[ENTITY TRANSFER MODULE]: Closing in agent {0} in region {1}", sp.Name, Scene.RegionInfo.RegionName);
-                    sp.CloseChildAgents(newRegionX, newRegionY);
-                    sp.Scene.IncomingCloseAgent(sp.UUID, false);
-
-                }
-                else
-                {
-                    m_log.DebugFormat("[ENTITY TRANSFER MODULE]: Not closing agent {0}, user is back in {0}", sp.Name, Scene.RegionInfo.RegionName);
-                    sp.DoNotCloseAfterTeleport = false;
-                }
+                // OK, it got this agent. Let's close everything
+                // If we shouldn't close the agent due to some other region renewing the connection 
+                // then this will be handled in IncomingCloseAgent under lock conditions
+                m_log.DebugFormat(
+                    "[ENTITY TRANSFER MODULE]: Closing agent {0} in {1} after teleport", sp.Name, Scene.Name);
+                sp.Scene.IncomingCloseAgent(sp.UUID, false);
             }
             else
+            {
                 // now we have a child agent in this region. 
                 sp.Reset();
+            }
         }
 
         /// <summary>
@@ -1838,10 +1868,10 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             List<ulong> newRegions = NewNeighbours(neighbourHandles, previousRegionNeighbourHandles);
             List<ulong> oldRegions = OldNeighbours(neighbourHandles, previousRegionNeighbourHandles);
 
-            //Dump("Current Neighbors", neighbourHandles);
-            //Dump("Previous Neighbours", previousRegionNeighbourHandles);
-            //Dump("New Neighbours", newRegions);
-            //Dump("Old Neighbours", oldRegions);
+//            Dump("Current Neighbors", neighbourHandles);
+//            Dump("Previous Neighbours", previousRegionNeighbourHandles);
+//            Dump("New Neighbours", newRegions);
+//            Dump("Old Neighbours", oldRegions);
 
             /// Update the scene presence's known regions here on this region
             sp.DropOldNeighbours(oldRegions);
@@ -1849,8 +1879,7 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
             /// Collect as many seeds as possible
             Dictionary<ulong, string> seeds;
             if (sp.Scene.CapsModule != null)
-                seeds
-                    = new Dictionary<ulong, string>(sp.Scene.CapsModule.GetChildrenSeeds(sp.UUID));
+                seeds = new Dictionary<ulong, string>(sp.Scene.CapsModule.GetChildrenSeeds(sp.UUID));
             else
                 seeds = new Dictionary<ulong, string>();
 
@@ -1920,6 +1949,7 @@ namespace OpenSim.Region.CoreModules.Framework.EntityTransfer
                     newAgent = true;
                 else
                     newAgent = false;
+//                    continue;
 
                 if (neighbour.RegionHandle != sp.Scene.RegionInfo.RegionHandle)
                 {

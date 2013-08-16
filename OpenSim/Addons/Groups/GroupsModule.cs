@@ -467,12 +467,12 @@ namespace OpenSim.Groups
                         }
 
                         // Send notice out to everyone that wants notices
-                        // Build notice IIM
-                        GridInstantMessage msg = CreateGroupNoticeIM(UUID.Zero, NoticeID, (byte)OpenMetaverse.InstantMessageDialog.GroupNotice);
                         foreach (GroupMembersData member in m_groupData.GetGroupMembers(GetRequestingAgentIDStr(remoteClient), GroupID))
                         {
                             if (member.AcceptNotices)
                             {
+                                // Build notice IIM, one of reach, because the sending may be async
+                                GridInstantMessage msg = CreateGroupNoticeIM(UUID.Zero, NoticeID, (byte)OpenMetaverse.InstantMessageDialog.GroupNotice);
                                 msg.toAgentID = member.AgentID.Guid;
                                 OutgoingInstantMessage(msg, member.AgentID);
                             }
@@ -1223,11 +1223,15 @@ namespace OpenSim.Groups
         {
             if (m_debugEnabled) m_log.InfoFormat("[Groups]: {0} called", System.Reflection.MethodBase.GetCurrentMethod().Name);
 
+            // NPCs currently don't have a CAPs structure or event queues.  There is a strong argument for conveying this information
+            // to them anyway since it makes writing server-side bots a lot easier, but for now we don't do anything.
+            if (remoteClient.SceneAgent.PresenceType == PresenceType.Npc)
+                return;
+
             OSDArray AgentData = new OSDArray(1);
             OSDMap AgentDataMap = new OSDMap(1);
             AgentDataMap.Add("AgentID", OSD.FromUUID(dataForAgentID));
             AgentData.Add(AgentDataMap);
-
 
             OSDArray GroupData = new OSDArray(data.Length);
             OSDArray NewGroupData = new OSDArray(data.Length);
@@ -1274,8 +1278,7 @@ namespace OpenSim.Groups
             if (queue != null)
             {
                 queue.Enqueue(queue.BuildEvent("AgentGroupDataUpdate", llDataStruct), GetRequestingAgentID(remoteClient));
-            }
-            
+            }            
         }
 
         private void SendScenePresenceUpdate(UUID AgentID, string Title)
@@ -1337,6 +1340,7 @@ namespace OpenSim.Groups
 
             GroupMembershipData[] membershipArray = GetProfileListedGroupMemberships(remoteClient, dataForAgentID);
             SendGroupMembershipInfoViaCaps(remoteClient, dataForAgentID, membershipArray);
+
             //remoteClient.SendAvatarGroupsReply(dataForAgentID, membershipArray);
             if (remoteClient.AgentId == dataForAgentID)
                 remoteClient.RefreshGroupMembership();

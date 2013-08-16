@@ -89,15 +89,8 @@ public sealed class BSCharacter : BSPhysObject
         // set _avatarVolume and _mass based on capsule size, _density and Scale
         ComputeAvatarVolumeAndMass();
 
-        // The avatar's movement is controlled by this motor that speeds up and slows down
-        //    the avatar seeking to reach the motor's target speed.
-        // This motor runs as a prestep action for the avatar so it will keep the avatar
-        //    standing as well as moving. Destruction of the avatar will destroy the pre-step action.
-        m_moveActor = new BSActorAvatarMove(PhysScene, this, AvatarMoveActorName);
-        PhysicalActors.Add(AvatarMoveActorName, m_moveActor);
-
-        DetailLog("{0},BSCharacter.create,call,size={1},scale={2},density={3},volume={4},mass={5}",
-                            LocalID, _size, Scale, Density, _avatarVolume, RawMass);
+        DetailLog("{0},BSCharacter.create,call,size={1},scale={2},density={3},volume={4},mass={5},pos={6}",
+                            LocalID, _size, Scale, Density, _avatarVolume, RawMass, pos);
 
         // do actual creation in taint time
         PhysScene.TaintedObject("BSCharacter.create", delegate()
@@ -106,7 +99,16 @@ public sealed class BSCharacter : BSPhysObject
             // New body and shape into PhysBody and PhysShape
             PhysScene.Shapes.GetBodyAndShape(true, PhysScene.World, this);
 
+            // The avatar's movement is controlled by this motor that speeds up and slows down
+            //    the avatar seeking to reach the motor's target speed.
+            // This motor runs as a prestep action for the avatar so it will keep the avatar
+            //    standing as well as moving. Destruction of the avatar will destroy the pre-step action.
+            m_moveActor = new BSActorAvatarMove(PhysScene, this, AvatarMoveActorName);
+            PhysicalActors.Add(AvatarMoveActorName, m_moveActor);
+
             SetPhysicalProperties();
+
+            IsInitialized = true;
         });
         return;
     }
@@ -114,6 +116,8 @@ public sealed class BSCharacter : BSPhysObject
     // called when this character is being destroyed and the resources should be released
     public override void Destroy()
     {
+        IsInitialized = false;
+
         base.Destroy();
 
         DetailLog("{0},BSCharacter.Destroy", LocalID);
@@ -190,6 +194,10 @@ public sealed class BSCharacter : BSPhysObject
         }
 
         set {
+            // This is how much the avatar size is changing. Positive means getting bigger.
+            // The avatar altitude must be adjusted for this change.
+            float heightChange = value.Z - _size.Z;
+
             _size = value;
             // Old versions of ScenePresence passed only the height. If width and/or depth are zero,
             //     replace with the default values.
@@ -207,6 +215,10 @@ public sealed class BSCharacter : BSPhysObject
                 {
                     PhysScene.PE.SetLocalScaling(PhysShape.physShapeInfo, Scale);
                     UpdatePhysicalMassProperties(RawMass, true);
+
+                    // Adjust the avatar's position to account for the increase/decrease in size
+                    ForcePosition = new OMV.Vector3(RawPosition.X, RawPosition.Y, RawPosition.Z + heightChange / 2f);
+
                     // Make sure this change appears as a property update event
                     PhysScene.PE.PushUpdate(PhysBody);
                 }
@@ -396,6 +408,7 @@ public sealed class BSCharacter : BSPhysObject
 
     // Allows the detection of collisions with inherently non-physical prims. see llVolumeDetect for more
     public override void SetVolumeDetect(int param) { return; }
+    public override bool IsVolumeDetect { get { return false; } }
 
     public override OMV.Vector3 GeometricCenter { get { return OMV.Vector3.Zero; } }
     public override OMV.Vector3 CenterOfMass { get { return OMV.Vector3.Zero; } }
