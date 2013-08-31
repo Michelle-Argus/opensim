@@ -219,7 +219,7 @@ namespace OpenSim.Region.Framework.Scenes
         private float m_sitAvatarHeight = 2.0f;
 
         private Vector3 m_lastChildAgentUpdatePosition;
-        private Vector3 m_lastChildAgentUpdateCamPosition;
+//        private Vector3 m_lastChildAgentUpdateCamPosition;
 
         private const int LAND_VELOCITYMAG_MAX = 12;
 
@@ -1847,8 +1847,7 @@ namespace OpenSim.Region.Framework.Scenes
             if (m_movementUpdateCount < 1)
                 m_movementUpdateCount = 1;
 
-
-            AgentManager.ControlFlags flags = (AgentManager.ControlFlags)agentData.ControlFlags;
+//            AgentManager.ControlFlags flags = (AgentManager.ControlFlags)agentData.ControlFlags;
 
             // Camera location in world.  We'll need to raytrace
             // from this location from time to time.
@@ -2298,6 +2297,9 @@ namespace OpenSim.Region.Framework.Scenes
 
         public void HandleAgentRequestSit(IClientAPI remoteClient, UUID agentID, UUID targetID, Vector3 offset)
         {
+            if (IsChildAgent)
+                return;
+
             if (ParentID != 0)
             {
                 if (ParentPart.UUID == targetID)
@@ -2524,6 +2526,9 @@ namespace OpenSim.Region.Framework.Scenes
 
         public void HandleAgentSit(IClientAPI remoteClient, UUID agentID)
         {
+            if (IsChildAgent)
+                return;
+
             SceneObjectPart part = m_scene.GetSceneObjectPart(m_requestedSitTargetID);
 
             if (part != null)
@@ -2584,6 +2589,9 @@ namespace OpenSim.Region.Framework.Scenes
 
         public void HandleAgentSitOnGround()
         {
+            if (IsChildAgent)
+                return;
+
 //            m_updateCount = 0;  // Kill animation update burst so that the SIT_G.. will stick..
             m_AngularVelocity = Vector3.Zero;
             Animator.TrySetMovementAnimation("SIT_GROUND_CONSTRAINED");
@@ -3025,7 +3033,7 @@ namespace OpenSim.Region.Framework.Scenes
             if (Util.GetDistanceTo(AbsolutePosition, m_lastChildAgentUpdatePosition) >= Scene.ChildReprioritizationDistance)
             {
                 m_lastChildAgentUpdatePosition = AbsolutePosition;
-                m_lastChildAgentUpdateCamPosition = CameraPosition;
+//                m_lastChildAgentUpdateCamPosition = CameraPosition;
 
                 ChildAgentDataUpdate cadu = new ChildAgentDataUpdate();
                 cadu.ActiveGroupID = UUID.Zero.Guid;
@@ -3233,11 +3241,6 @@ namespace OpenSim.Region.Framework.Scenes
             {
                 return m_scene.CrossAgentToNewRegion(this, false);
             }
-        }
-
-        public void RestoreInCurrentScene()
-        {
-            AddToPhysicalScene(false); // not exactly false
         }
 
         public void Reset()
