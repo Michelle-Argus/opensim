@@ -568,7 +568,7 @@ namespace OpenSim.Region.CoreModules.World.Estate
                                 if (!Scene.TeleportClientHome(user, s.ControllingClient))
                                 {
                                     s.ControllingClient.Kick("Your access to the region was revoked and TP home failed - you have been logged out.");
-                                    Scene.IncomingCloseAgent(s.UUID, false);
+                                    Scene.CloseAgent(s.UUID, false);
                                 }
                             }
                         }
@@ -803,7 +803,7 @@ namespace OpenSim.Region.CoreModules.World.Estate
                     if (!Scene.TeleportClientHome(prey, s.ControllingClient))
                     {
                         s.ControllingClient.Kick("You were teleported home by the region owner, but the TP failed - you have been logged out.");
-                        Scene.IncomingCloseAgent(s.UUID, false);
+                        Scene.CloseAgent(s.UUID, false);
                     }
                 }
             }
@@ -826,7 +826,7 @@ namespace OpenSim.Region.CoreModules.World.Estate
                         if (!Scene.TeleportClientHome(p.UUID, p.ControllingClient))
                         {
                             p.ControllingClient.Kick("You were teleported home by the region owner, but the TP failed - you have been logged out.");
-                            Scene.IncomingCloseAgent(p.UUID, false);
+                            Scene.CloseAgent(p.UUID, false);
                         }
                     }
                 }
@@ -835,26 +835,23 @@ namespace OpenSim.Region.CoreModules.World.Estate
         
         private void AbortTerrainXferHandler(IClientAPI remoteClient, ulong XferID)
         {
-            if (TerrainUploader != null)
+            lock (this)
             {
-                lock (TerrainUploader)
+                if ((TerrainUploader != null) && (XferID == TerrainUploader.XferID))
                 {
-                    if (XferID == TerrainUploader.XferID)
-                    {
-                        remoteClient.OnXferReceive -= TerrainUploader.XferReceive;
-                        remoteClient.OnAbortXfer -= AbortTerrainXferHandler;
-                        TerrainUploader.TerrainUploadDone -= HandleTerrainApplication;
+                    remoteClient.OnXferReceive -= TerrainUploader.XferReceive;
+                    remoteClient.OnAbortXfer -= AbortTerrainXferHandler;
+                    TerrainUploader.TerrainUploadDone -= HandleTerrainApplication;
 
-                        TerrainUploader = null;
-                        remoteClient.SendAlertMessage("Terrain Upload aborted by the client");
-                    }
+                    TerrainUploader = null;
+                    remoteClient.SendAlertMessage("Terrain Upload aborted by the client");
                 }
             }
-
         }
+
         private void HandleTerrainApplication(string filename, byte[] terrainData, IClientAPI remoteClient)
         {
-            lock (TerrainUploader)
+            lock (this)
             {
                 remoteClient.OnXferReceive -= TerrainUploader.XferReceive;
                 remoteClient.OnAbortXfer -= AbortTerrainXferHandler;
@@ -913,22 +910,32 @@ namespace OpenSim.Region.CoreModules.World.Estate
 
         private void handleUploadTerrain(IClientAPI remote_client, string clientFileName)
         {
-            if (TerrainUploader == null)
+            lock (this)
             {
-
-                TerrainUploader = new EstateTerrainXferHandler(remote_client, clientFileName);
-                lock (TerrainUploader)
+                if (TerrainUploader == null)
                 {
+                    m_log.DebugFormat("Starting to receive uploaded terrain");
+                    TerrainUploader = new EstateTerrainXferHandler(remote_client, clientFileName);
                     remote_client.OnXferReceive += TerrainUploader.XferReceive;
                     remote_client.OnAbortXfer += AbortTerrainXferHandler;
                     TerrainUploader.TerrainUploadDone += HandleTerrainApplication;
+                    TerrainUploader.RequestStartXfer(remote_client);
                 }
-                TerrainUploader.RequestStartXfer(remote_client);
-
+                else
+                {
+                    remote_client.SendAlertMessage("Another Terrain Upload is in progress.  Please wait your turn!");
+                }
             }
-            else
+        }
+
+        public bool IsTerrainXfer(ulong xferID)
+        {
+            lock (this)
             {
-                remote_client.SendAlertMessage("Another Terrain Upload is in progress.  Please wait your turn!");
+                if (TerrainUploader == null)
+                    return false;
+                else
+                    return TerrainUploader.XferID == xferID;
             }
         }
         

@@ -785,7 +785,7 @@ namespace OpenSim.Framework.Servers.HttpServer
                 "[BASE HTTP SERVER]: HTTP IN {0} :{1} {2} content type handler {3} {4} from {5}",
                 RequestNumber,
                 Port,
-                (request.ContentType == null || request.ContentType == "") ? "not set" : request.ContentType,
+                string.IsNullOrEmpty(request.ContentType) ? "not set" : request.ContentType,
                 request.HttpMethod,
                 request.Url.PathAndQuery,
                 request.RemoteIPEndPoint);
@@ -1056,7 +1056,21 @@ namespace OpenSim.Framework.Servers.HttpServer
                     }
 
                     response.ContentType = "text/xml";
-                    responseString = XmlRpcResponseSerializer.Singleton.Serialize(xmlRpcResponse);
+                    using (MemoryStream outs = new MemoryStream())
+                    {
+                        using (XmlTextWriter writer = new XmlTextWriter(outs, Encoding.UTF8))
+                        {
+                            writer.Formatting = Formatting.None;
+                            XmlRpcResponseSerializer.Singleton.Serialize(writer, xmlRpcResponse);
+                            writer.Flush();
+                            outs.Flush();
+                            outs.Position = 0;
+                            using (StreamReader sr = new StreamReader(outs))
+                            {
+                                responseString = sr.ReadToEnd();
+                            }
+                        }
+                    }
                 }
                 else
                 {

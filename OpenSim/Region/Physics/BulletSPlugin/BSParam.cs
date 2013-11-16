@@ -120,6 +120,7 @@ public static class BSParam
 	public static float NumberOfSolverIterations { get; private set; }
     public static bool UseSingleSidedMeshes { get; private set; }
     public static float GlobalContactBreakingThreshold { get; private set; }
+    public static float PhysicsUnmanLoggingFrames { get; private set; }
 
     // Avatar parameters
     public static float AvatarFriction { get; private set; }
@@ -134,6 +135,7 @@ public static class BSParam
     public static float AvatarHeightMidFudge { get; private set; }
     public static float AvatarHeightHighFudge { get; private set; }
 	public static float AvatarContactProcessingThreshold { get; private set; }
+    public static float AvatarStopZeroThreshold { get; private set; }
 	public static int AvatarJumpFrames { get; private set; }
 	public static float AvatarBelowGroundUpCorrectionMeters { get; private set; }
 	public static float AvatarStepHeight { get; private set; }
@@ -570,10 +572,12 @@ public static class BSParam
         new ParameterDefn<float>("AvatarHeightLowFudge", "A fudge factor to make small avatars stand on the ground",
             -0.2f ),
         new ParameterDefn<float>("AvatarHeightMidFudge", "A fudge distance to adjust average sized avatars to be standing on ground",
-            0.2f ),
+            0.1f ),
         new ParameterDefn<float>("AvatarHeightHighFudge", "A fudge factor to make tall avatars stand on the ground",
-            0.2f ),
+            0.1f ),
 	    new ParameterDefn<float>("AvatarContactProcessingThreshold", "Distance from capsule to check for collisions",
+            0.1f ),
+	    new ParameterDefn<float>("AvatarStopZeroThreshold", "Movement velocity below which avatar is assumed to be stopped",
             0.1f ),
 	    new ParameterDefn<float>("AvatarBelowGroundUpCorrectionMeters", "Meters to move avatar up if it seems to be below ground",
             1.0f ),
@@ -668,6 +672,10 @@ public static class BSParam
             0f,
             (s) => { return GlobalContactBreakingThreshold; },
             (s,v) => { GlobalContactBreakingThreshold = v; s.UnmanagedParams[0].globalContactBreakingThreshold = v; } ),
+	    new ParameterDefn<float>("PhysicsUnmanLoggingFrames", "If non-zero, frames between output of detailed unmanaged physics statistics",
+            0f,
+            (s) => { return PhysicsUnmanLoggingFrames; },
+            (s,v) => { PhysicsUnmanLoggingFrames = v; s.UnmanagedParams[0].physicsLoggingFrames = v; } ),
 
 	    new ParameterDefn<int>("CSHullMaxDepthSplit", "CS impl: max depth to split for hull. 1-10 but > 7 is iffy",
             7 ),
@@ -683,21 +691,21 @@ public static class BSParam
             0f ),
 
 	    new ParameterDefn<float>("BHullMaxVerticesPerHull", "Bullet impl: max number of vertices per created hull",
-            100f ),
+            200f ),
 	    new ParameterDefn<float>("BHullMinClusters", "Bullet impl: minimum number of hulls to create per mesh",
-            2f ),
+            10f ),
 	    new ParameterDefn<float>("BHullCompacityWeight", "Bullet impl: weight factor for how compact to make hulls",
-            0.1f ),
+            20f ),
 	    new ParameterDefn<float>("BHullVolumeWeight", "Bullet impl: weight factor for volume in created hull",
-            0f ),
+            0.1f ),
 	    new ParameterDefn<float>("BHullConcavity", "Bullet impl: weight factor for how convex a created hull can be",
-            100f ),
+            10f ),
 	    new ParameterDefn<bool>("BHullAddExtraDistPoints", "Bullet impl: whether to add extra vertices for long distance vectors",
-            false ),
+            true ),
 	    new ParameterDefn<bool>("BHullAddNeighboursDistPoints", "Bullet impl: whether to add extra vertices between neighbor hulls",
-            false ),
+            true ),
 	    new ParameterDefn<bool>("BHullAddFacesPoints", "Bullet impl: whether to add extra vertices to break up hull faces",
-            false ),
+            true ),
 	    new ParameterDefn<bool>("BHullShouldAdjustCollisionMargin", "Bullet impl: whether to shrink resulting hulls to account for collision margin",
             false ),
 
@@ -826,7 +834,7 @@ public static class BSParam
     private static void ResetConstraintSolverTainted(BSScene pPhysScene, float v)
     {
         BSScene physScene = pPhysScene;
-        physScene.TaintedObject("BSParam.ResetConstraintSolver", delegate()
+        physScene.TaintedObject(BSScene.DetailLogZero, "BSParam.ResetConstraintSolver", delegate()
         {
             physScene.PE.ResetConstraintSolver(physScene.World);
         });
