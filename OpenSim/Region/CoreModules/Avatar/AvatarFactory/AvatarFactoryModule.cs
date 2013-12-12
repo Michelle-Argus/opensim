@@ -210,7 +210,7 @@ namespace OpenSim.Region.CoreModules.Avatar.AvatarFactory
 
                     // If bake textures are missing and this is not an NPC, request a rebake from client
                     if (!ValidateBakedTextureCache(sp) && (((ScenePresence)sp).PresenceType != PresenceType.Npc))
-                        RequestRebake(sp, true);
+                        RequestRebake(sp, false);
 
                     // Save the wearble hashes in the appearance
                     sp.Appearance.ResetTextureHashes();
@@ -410,9 +410,9 @@ namespace OpenSim.Region.CoreModules.Avatar.AvatarFactory
                 if (face == null)
                     continue;
 
-                // m_log.DebugFormat(
-                //     "[AVFACTORY]: Looking for texture {0}, id {1} for {2} {3}",
-                //     face.TextureID, idx, client.Name, client.AgentId);
+                 m_log.DebugFormat(
+                     "[AVFACTORY]: Looking for texture {0}, id {1} for {2} {3}",
+                     face.TextureID, idx, client.Name, client.AgentId);
 
                 // if the texture is one of the "defaults" then skip it
                 // this should probably be more intelligent (skirt texture doesnt matter
