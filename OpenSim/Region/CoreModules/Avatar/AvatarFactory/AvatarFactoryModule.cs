@@ -411,8 +411,8 @@ namespace OpenSim.Region.CoreModules.Avatar.AvatarFactory
                     continue;
 
                  m_log.DebugFormat(
-                     "[AVFACTORY]: Looking for texture {0}, id {1} for {2} {3}",
-                     face.TextureID, idx, sp.Name, sp.AgentId);
+                     "[AVFACTORY]: Looking for texture {0}, id {1} for {2}",
+                     face.TextureID, idx, sp.Name);
 
                 // if the texture is one of the "defaults" then skip it
                 // this should probably be more intelligent (skirt texture doesnt matter
