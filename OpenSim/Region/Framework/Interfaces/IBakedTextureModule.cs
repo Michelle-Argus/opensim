@@ -25,26 +25,16 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-using System.Collections.Generic;
-using OpenSim.Data;
+using System;
+using Nini.Config;
+using OpenSim.Framework;
 using OpenMetaverse;
 
-namespace OpenSim.Data
+namespace OpenSim.Services.Interfaces
 {
-    public class OfflineIMData
+    public interface IBakedTextureModule
     {
-        public UUID PrincipalID;
-        public UUID FromID;
-        public Dictionary<string, string> Data;
-    }
-
-
-    public interface IOfflineIMData 
-    {
-        OfflineIMData[] Get(string field, string val);
-        long GetCount(string field, string key);
-        bool Store(OfflineIMData data);
-        bool Delete(string field, string val);
-        void DeleteOld();
+        WearableCacheItem[] Get(UUID id);
+        void Store(UUID id, WearableCacheItem[] data);
     }
 }

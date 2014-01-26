@@ -694,6 +694,12 @@
     ; enable_windlight = false
 
 
+[Materials]
+    ;# {enable_materials} {} {Enable Materials support?} {true false} true
+    ;; This enables the use of Materials.
+    ; enable_materials = true
+
+
 [DataSnapshot]
     ;# {index_sims} {} {Enable data snapshotting (search)?} {true false} false
     ;; The following set of configs pertains to search.
@@ -1046,7 +1052,7 @@
 
 
 [UserProfiles]
-  ;# {ProfileURL} {} {Set url to UserProfilesService} {}
+  ;# {ProfileServiceURL} {} {Set url to UserProfilesService} {}
   ;; Set the value of the url to your UserProfilesService
   ;; If un-set / "" the module is disabled
   ;; ProfileServiceURL = http://127.0.0.1:8002

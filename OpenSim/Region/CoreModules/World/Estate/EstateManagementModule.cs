@@ -708,7 +708,7 @@ namespace OpenSim.Region.CoreModules.World.Estate
             }
         }
 
-        public void handleOnEstateManageTelehub(IClientAPI client, UUID invoice, UUID senderID, string cmd, uint param1)
+        public void HandleOnEstateManageTelehub(IClientAPI client, UUID invoice, UUID senderID, string cmd, uint param1)
         {
             SceneObjectPart part;
 
@@ -748,7 +748,9 @@ namespace OpenSim.Region.CoreModules.World.Estate
                 default:
                     break;
             }
-            SendTelehubInfo(client);
+
+            if (client != null)
+                SendTelehubInfo(client);
         }
 
         private void SendSimulatorBlueBoxMessage(
@@ -1220,7 +1222,7 @@ namespace OpenSim.Region.CoreModules.World.Estate
             client.OnEstateRestartSimRequest += handleEstateRestartSimRequest;
             client.OnEstateChangeCovenantRequest += handleChangeEstateCovenantRequest;
             client.OnEstateChangeInfo += handleEstateChangeInfo;
-            client.OnEstateManageTelehub += handleOnEstateManageTelehub;
+            client.OnEstateManageTelehub += HandleOnEstateManageTelehub;
             client.OnUpdateEstateAccessDeltaRequest += handleEstateAccessDeltaRequest;
             client.OnSimulatorBlueBoxMessageRequest += SendSimulatorBlueBoxMessage;
             client.OnEstateBlueBoxMessageRequest += SendEstateBlueBoxMessage;
